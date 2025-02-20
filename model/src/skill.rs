@@ -68,13 +68,13 @@ impl SkillPoints {
     pub fn new(value: i32) -> SkillPoints {
         SkillPoints(value)
     }
-    
+
     pub fn quality_level(self) -> Option<QualityLevel> {
         if self.0 < 0 {
             None
         }
         else {
-            let quality_level = ((self.0 + 2) / 3).max(1).min(6);
+            let quality_level = ((self.0 + 2) / 3).clamp(1, 6);
 
             Some(QualityLevel(NonZeroU8::new(quality_level as u8).unwrap()))
         }

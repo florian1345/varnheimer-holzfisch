@@ -4,7 +4,7 @@ use crate::probability::Probability;
 use std::cmp::Ordering;
 use std::ops::{Add, AddAssign, Mul, MulAssign};
 
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Evaluation(f64);
 
 impl Evaluation {
@@ -29,7 +29,13 @@ impl Eq for Evaluation {}
 
 impl Ord for Evaluation {
     fn cmp(&self, other: &Evaluation) -> Ordering {
-        self.partial_cmp(other).unwrap()
+        self.0.partial_cmp(&other.0).unwrap()
+    }
+}
+
+impl PartialOrd for Evaluation {
+    fn partial_cmp(&self, other: &Evaluation) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 

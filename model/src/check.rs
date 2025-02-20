@@ -278,8 +278,8 @@ impl PartialSkillCheckState {
     pub fn as_skill_check_state(self) -> Option<SkillCheckState> {
         let mut rolls = [Roll::MIN; DICE_PER_SKILL_CHECK];
 
-        for i in 0..DICE_PER_SKILL_CHECK {
-            rolls[i] = self.fixed_rolls[i]?;
+        for (roll, &optional_fixed_roll) in rolls.iter_mut().zip(self.fixed_rolls.iter()) {
+            *roll = optional_fixed_roll?;
         }
 
         Some(SkillCheckState {
