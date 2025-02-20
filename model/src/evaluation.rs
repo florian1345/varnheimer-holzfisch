@@ -86,3 +86,75 @@ pub trait SkillCheckEvaluator {
 
     fn evaluate(&mut self, outcome: SkillCheckOutcome) -> Evaluation;
 }
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    use kernal::prelude::*;
+
+    use rstest::rstest;
+
+    #[test]
+    fn new_evaluation_with_nan_is_none() {
+        let evaluation = Evaluation::new(f64::NAN);
+
+        assert_that!(evaluation).is_none();
+    }
+
+    #[rstest]
+    #[case::neg_infinity(f64::NEG_INFINITY)]
+    #[case::negative(-123.456)]
+    #[case::zero(0.0)]
+    #[case::positive(123.456)]
+    #[case::infininty(f64::INFINITY)]
+    fn new_evaluation_with_non_nan_is_some(#[case] value: f64) {
+        let evaluation = Evaluation::new(value);
+
+        assert_that!(evaluation).is_some();
+        assert_that!(evaluation.unwrap().as_f64()).is_equal_to(value);
+    }
+
+    #[test]
+    fn adding_evaluations_works() {
+        let lhs = Evaluation::new(1.0).unwrap();
+        let rhs = Evaluation::new(2.0).unwrap();
+
+        assert_that!((lhs + rhs).as_f64()).is_close_to(3.0, 0.001);
+    }
+
+    #[test]
+    fn multiplying_evaluations_works() {
+        let lhs = Evaluation::new(2.0).unwrap();
+        let rhs = Probability::new(0.3).unwrap();
+
+        assert_that!((lhs * rhs).as_f64()).is_close_to(0.6, 0.001);
+    }
+
+    #[test]
+    fn comparing_evaluations_works() {
+        let smaller = Evaluation::new(1.0).unwrap();
+        let larger = Evaluation::new(2.0).unwrap();
+
+        assert_that!(smaller).is_less_than(larger);
+        assert_that!(larger).is_greater_than(smaller);
+        assert_that!(smaller.cmp(&smaller)).is_equal_to(Ordering::Equal);
+    }
+
+    #[test]
+    fn comparing_evaluated_works() {
+        let smaller = Evaluated {
+            evaluated: (),
+            evaluation: Evaluation::new(1.0).unwrap()
+        };
+        let larger = Evaluated {
+            evaluated: (),
+            evaluation: Evaluation::new(2.0).unwrap()
+        };
+
+        assert_that!(smaller.compare_evaluation(&larger)).is_equal_to(Ordering::Less);
+        assert_that!(larger.compare_evaluation(&smaller)).is_equal_to(Ordering::Greater);
+        assert_that!(smaller.compare_evaluation(&smaller)).is_equal_to(Ordering::Equal);
+    }
+}
