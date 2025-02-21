@@ -3,6 +3,7 @@ use crate::roll::Roll;
 use std::iter::Sum;
 use std::num::NonZeroU8;
 use std::ops::{Add, AddAssign, Index, IndexMut, Sub, SubAssign};
+use std::slice::Iter;
 
 pub const QUALITY_LEVEL_COUNT: usize = 6;
 
@@ -37,7 +38,7 @@ pub struct QualityLevelMap<T>([T; QUALITY_LEVEL_COUNT]);
 
 impl<T> QualityLevelMap<T> {
 
-    pub fn iter(&self) -> impl Iterator<Item = &T> {
+    pub fn iter(&self) -> Iter<'_, T> {
         self.0.iter()
     }
 
@@ -135,10 +136,30 @@ impl Attribute {
 mod tests {
 
     use super::*;
+    use crate::test_util;
 
+    use kernal::collections::Collection;
+    use kernal::collections::ordered::OrderedCollection;
     use kernal::prelude::*;
 
     use rstest::rstest;
+
+    impl<'collection, T> Collection<'collection> for QualityLevelMap<T> {
+        type Item = T;
+        type Iter<'iter> = Iter<'iter, T>
+        where
+            Self: 'iter,
+            'collection: 'iter;
+
+        fn iterator<'reference>(&'reference self) -> Self::Iter<'reference>
+        where
+            'collection: 'reference
+        {
+            self.iter()
+        }
+    }
+    
+    impl<'collection, T> OrderedCollection<'collection> for QualityLevelMap<T> {}
 
     #[test]
     fn all_quality_levels_correctly_initialized() {
@@ -149,22 +170,9 @@ mod tests {
         assert_that!(all_quality_levels_as_u8).contains_exactly_in_given_order(1..=6);
     }
 
-    fn create_quality_level_map(values: [u32; QUALITY_LEVEL_COUNT]) -> QualityLevelMap<u32> {
-        let mut map = QualityLevelMap::<u32>::default();
-
-        map[QualityLevel::ONE] = values[0];
-        map[QualityLevel::TWO] = values[1];
-        map[QualityLevel::THREE] = values[2];
-        map[QualityLevel::FOUR] = values[3];
-        map[QualityLevel::FIVE] = values[4];
-        map[QualityLevel::SIX] = values[5];
-
-        map
-    }
-
     #[test]
     fn quality_level_map_indexing_works() {
-        let map = create_quality_level_map([5, 10, 15, 20, 25, 30]);
+        let map = test_util::create_quality_level_map([5, 10, 15, 20, 25, 30]);
 
         assert_that!(map[QualityLevel::ONE]).is_equal_to(5);
         assert_that!(map[QualityLevel::TWO]).is_equal_to(10);
@@ -176,7 +184,7 @@ mod tests {
 
     #[test]
     fn quality_level_iter_works() {
-        let map = create_quality_level_map([5, 10, 15, 20, 25, 30]);
+        let map = test_util::create_quality_level_map([5, 10, 15, 20, 25, 30]);
         let iter_collected = map.iter().cloned().collect::<Vec<_>>();
         let iter_mut_collected = map.iter().cloned().collect::<Vec<_>>();
 

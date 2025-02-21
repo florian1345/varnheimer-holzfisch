@@ -44,7 +44,7 @@ fn simple_call_with_zero_skill_points() {
     let evaluated = engine.evaluate_partial(PartialSkillCheckState {
         attributes: [Attribute::new(10), Attribute::new(10), Attribute::new(10)],
         fixed_rolls: [None, None, None],
-        skill_points: SkillPoints::new(0),
+        skill_value: SkillPoints::new(0),
     });
 
     let expected_spectacular_failure_probability = 1.0 / 8000.0;
