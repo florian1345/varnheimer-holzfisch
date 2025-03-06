@@ -5,5 +5,5 @@ pub mod roll;
 pub mod evaluation;
 pub mod engine;
 
-#[cfg(test)]
-pub(crate) mod test_util;
+#[cfg(feature = "test-util")]
+pub mod test_util;

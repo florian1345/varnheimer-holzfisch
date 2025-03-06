@@ -2,12 +2,14 @@ use std::collections::HashMap;
 
 use engine::HolzfischEngine;
 
-use model::check::{PartialSkillCheckState, SkillCheckOutcome};
+use model::check::{PartialSkillCheckState, SkillCheckOutcome, SkillCheckProbabilities};
 use model::engine::SkillCheckEngine;
 use model::evaluation::{Evaluation, SkillCheckEvaluator};
 use model::skill::{Attribute, QualityLevel, SkillPoints};
 
 use kernal::prelude::*;
+use model::probability::Probability;
+use model::test_util::create_quality_level_map;
 
 struct PerOutcomeEvaluator {
     outcomes: HashMap<SkillCheckOutcome, Evaluation>
@@ -15,11 +17,11 @@ struct PerOutcomeEvaluator {
 
 impl PerOutcomeEvaluator {
     fn new(
-        outcomes: impl IntoIterator<Item = (SkillCheckOutcome, f64)>
+        outcomes: impl IntoIterator<Item = (SkillCheckOutcome, Evaluation)>
     ) -> PerOutcomeEvaluator {
         PerOutcomeEvaluator {
             outcomes: outcomes.into_iter()
-                .map(|(outcome, evaluation)| (outcome, Evaluation::new(evaluation).unwrap()))
+                .map(|(outcome, evaluation)| (outcome, evaluation))
                 .collect()
         }
     }
@@ -31,13 +33,22 @@ impl SkillCheckEvaluator for PerOutcomeEvaluator {
     }
 }
 
+fn prob(value: f64) -> Probability {
+    Probability::new(value).unwrap()
+}
+
+const EPS: f64 = 1e-6;
+
 #[test]
 fn simple_call_with_zero_skill_points() {
+    let success_eval = Evaluation::new(1.0).unwrap();
+    let critical_success_eval = Evaluation::new(1_000.0).unwrap();
+    let spectacular_success_eval = Evaluation::new(1_000_000.0).unwrap();
     let mut engine = HolzfischEngine {
         evaluator: PerOutcomeEvaluator::new([
-            (SkillCheckOutcome::Success(QualityLevel::ONE), 1.0),
-            (SkillCheckOutcome::CriticalSuccess(QualityLevel::ONE), 1_000.0),
-            (SkillCheckOutcome::SpectacularSuccess(QualityLevel::ONE), 1_000_000.0)
+            (SkillCheckOutcome::Success(QualityLevel::ONE), success_eval),
+            (SkillCheckOutcome::CriticalSuccess(QualityLevel::ONE), critical_success_eval),
+            (SkillCheckOutcome::SpectacularSuccess(QualityLevel::ONE), spectacular_success_eval)
         ])
     };
 
@@ -47,37 +58,25 @@ fn simple_call_with_zero_skill_points() {
         skill_value: SkillPoints::new(0),
     });
 
-    let expected_spectacular_failure_probability = 1.0 / 8000.0;
-    let expected_critical_failure_probability = 57.0 / 8000.0;
-    let expected_failure_probability = (7000.0 - 88.0) / 8000.0;
-    let expected_success_probability = (1000.0 - 28.0) / 8000.0;
-    let expected_critical_success_probability = 57.0 / 8000.0;
-    let expected_spectacular_success_probability = 1.0 / 8000.0;
+    let success_probability = prob((1000.0 - 28.0) / 8000.0);
+    let critical_success_probability = prob(57.0 / 8000.0);
+    let spectacular_success_probability = prob(1.0 / 8000.0);
+    let expected_probs = SkillCheckProbabilities {
+        spectacular_failure_probability: prob(1.0 / 8000.0),
+        critical_failure_probability: prob(57.0 / 8000.0),
+        failure_probability: prob((7000.0 - 88.0) / 8000.0),
+        success_probabilities_by_quality_level:
+            create_quality_level_map([success_probability]),
+        critical_success_probabilities_by_quality_level:
+            create_quality_level_map([critical_success_probability]),
+        spectacular_success_probabilities_by_quality_level:
+            create_quality_level_map([spectacular_success_probability])
+    };
+    let expected_evaluation =
+        success_eval * success_probability
+            + critical_success_eval * critical_success_probability
+            + spectacular_success_eval * spectacular_success_probability;
 
-    let epsilon = 0.001;
-
-    assert_that!(evaluated.evaluation.as_f64()).is_close_to(
-        expected_success_probability +
-            expected_critical_success_probability * 1_000.0 +
-            expected_spectacular_success_probability * 1_000_000.0, epsilon);
-
-    let probs = evaluated.evaluated;
-
-    assert_that!(probs.spectacular_failure_probability.as_f64())
-        .is_close_to(expected_spectacular_failure_probability, epsilon);
-    assert_that!(probs.critical_failure_probability.as_f64())
-        .is_close_to(expected_critical_failure_probability, epsilon);
-    assert_that!(probs.failure_probability.as_f64())
-        .is_close_to(expected_failure_probability, epsilon);
-    assert_that!(probs.success_probabilities_by_quality_level[QualityLevel::ONE].as_f64())
-        .is_close_to(expected_success_probability, epsilon);
-    assert_that!(probs.critical_success_probabilities_by_quality_level[QualityLevel::ONE].as_f64())
-        .is_close_to(expected_critical_success_probability, epsilon);
-    assert_that!(probs.spectacular_success_probabilities_by_quality_level[QualityLevel::ONE]
-        .as_f64()).is_close_to(expected_spectacular_success_probability, epsilon);
-
-    assert_that!(&QualityLevel::ALL[1..]).contains_only_elements_matching(|&ql|
-        probs.success_probabilities_by_quality_level[ql].as_f64() == 0.0 &&
-            probs.critical_success_probabilities_by_quality_level[ql].as_f64() == 0.0 &&
-            probs.spectacular_success_probabilities_by_quality_level[ql].as_f64() == 0.0);
+    assert_that!(evaluated.evaluation).is_close_to(expected_evaluation, EPS);
+    assert_that!(evaluated.evaluated).is_close_to(expected_probs, EPS);
 }
