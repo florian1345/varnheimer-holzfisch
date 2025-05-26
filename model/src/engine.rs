@@ -14,14 +14,21 @@ pub trait SkillCheckEngine {
     fn evaluate_partial(&mut self, state: PartialSkillCheckState)
         -> Evaluated<SkillCheckProbabilities>;
 
-    fn evaluate(&mut self, skill_check: SkillCheckState)
+    fn evaluate_all_actions(&mut self, skill_check: SkillCheckState)
             -> Vec<(SkillCheckAction, Evaluated<SkillCheckProbabilities>)> {
         let mut result = skill_check.legal_actions().into_iter()
             .map(|action| (action, self.evaluate_action(skill_check, action)))
             .collect::<Vec<_>>();
 
-        result.sort_by_key(|(_, evaluated)| evaluated.evaluation);
+        result.sort_by_key(|(_, evaluated)| -evaluated.evaluation);
 
         result
+    }
+    
+    fn evaluate(&mut self, skill_check: SkillCheckState) -> Evaluated<SkillCheckProbabilities> {
+        self.evaluate_all_actions(skill_check).into_iter()
+            .map(|(_, evaluated)| evaluated)
+            .max_by_key(|&evaluated| evaluated.evaluation)
+            .unwrap()
     }
 }

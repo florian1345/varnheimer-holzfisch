@@ -1,6 +1,7 @@
 [workspace]
 
-members = [ "engine",
+members = [
+    "engine",
     "model"
 ]
 resolver = "2"

@@ -2,7 +2,7 @@ use crate::check::SkillCheckOutcome;
 use crate::probability::Probability;
 
 use std::cmp::Ordering;
-use std::ops::{Add, AddAssign, Mul, MulAssign};
+use std::ops::{Add, AddAssign, Mul, MulAssign, Neg};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Evaluation(f64);
@@ -66,6 +66,14 @@ impl Mul<Probability> for Evaluation {
     fn mul(mut self, rhs: Probability) -> Evaluation {
         self *= rhs;
         self
+    }
+}
+
+impl Neg for Evaluation {
+    type Output = Evaluation;
+
+    fn neg(self) -> Evaluation {
+        Evaluation(-self.0)
     }
 }
 

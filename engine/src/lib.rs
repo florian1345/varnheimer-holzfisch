@@ -2,7 +2,8 @@ use model::check::{
     SkillCheckAction,
     SkillCheckProbabilities,
     PartialSkillCheckState,
-    SkillCheckState
+    SkillCheckState,
+    SkillCheckActionResult
 };
 use model::engine::SkillCheckEngine;
 use model::evaluation::{Evaluated, Evaluation, SkillCheckEvaluator};
@@ -21,16 +22,18 @@ impl<EvaluatorT: SkillCheckEvaluator> SkillCheckEngine for HolzfischEngine<Evalu
         state: SkillCheckState,
         action: SkillCheckAction
     ) -> Evaluated<SkillCheckProbabilities> {
-        match action {
-            SkillCheckAction::Accept => {
-                let outcome = state.current_outcome();
+        match action.apply(state) {
+            SkillCheckActionResult::Done(outcome) => {
                 let evaluation = self.evaluator.evaluate(outcome);
 
                 Evaluated {
                     evaluated: SkillCheckProbabilities::of_known_outcome(outcome),
                     evaluation,
                 }
-            }
+            },
+            SkillCheckActionResult::State(state) => self.evaluate(state),
+            SkillCheckActionResult::PartialState(partial_state) =>
+                self.evaluate_partial(partial_state),
         }
     }
 
@@ -39,10 +42,7 @@ impl<EvaluatorT: SkillCheckEvaluator> SkillCheckEngine for HolzfischEngine<Evalu
         mut state: PartialSkillCheckState
     ) -> Evaluated<SkillCheckProbabilities> {
         if let Some(state) = state.as_skill_check_state() {
-            return self.evaluate(state).into_iter()
-                .map(|(_, evaluated)| evaluated)
-                .max_by_key(|&evaluated| evaluated.evaluation)
-                .unwrap();
+            return self.evaluate(state);
         }
 
         let first_unrolled_idx = state.fixed_rolls.iter_mut()

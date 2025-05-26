@@ -28,6 +28,20 @@ impl QualityLevel {
         QualityLevel::SIX
     ];
 
+    pub fn saturating_add(self, other: QualityLevel) -> QualityLevel {
+        QualityLevel(self.0.checked_add(other.0.get()).unwrap().min(QualityLevel::SIX.0))
+    }
+
+    pub fn saturating_add_option(self, other: Option<QualityLevel>) -> QualityLevel {
+        other
+            .map(|other_ql| self.saturating_add(other_ql))
+            .unwrap_or(self)
+    }
+
+    pub fn as_u8(self) -> u8 {
+        self.0.get()
+    }
+
     fn index(self) -> usize {
         (self.0.get() - 1) as usize
     }
@@ -281,5 +295,32 @@ mod tests {
 
         assert_that!(attribute.missing_skill_points(roll))
             .is_equal_to(SkillPoints::new(expected_missing_skill_points));
+    }
+
+    #[rstest]
+    #[case(QualityLevel::ONE)]
+    #[case(QualityLevel::TWO)]
+    #[case(QualityLevel::THREE)]
+    #[case(QualityLevel::FOUR)]
+    #[case(QualityLevel::FIVE)]
+    #[case(QualityLevel::SIX)]
+    fn quality_level_saturating_add_none_is_self(#[case] quality_level: QualityLevel) {
+        assert_that!(quality_level.saturating_add_option(Option::None)).is_equal_to(quality_level);
+    }
+
+    #[rstest]
+    #[case(QualityLevel::ONE, QualityLevel::ONE, QualityLevel::TWO)]
+    #[case(QualityLevel::ONE, QualityLevel::THREE, QualityLevel::FOUR)]
+    #[case(QualityLevel::FOUR, QualityLevel::TWO, QualityLevel::SIX)]
+    #[case(QualityLevel::ONE, QualityLevel::SIX, QualityLevel::SIX)]
+    #[case(QualityLevel::SIX, QualityLevel::ONE, QualityLevel::SIX)]
+    #[case(QualityLevel::FOUR, QualityLevel::THREE, QualityLevel::SIX)]
+    #[case(QualityLevel::SIX, QualityLevel::SIX, QualityLevel::SIX)]
+    fn quality_level_saturating_add_some(
+        #[case] lhs: QualityLevel,
+        #[case] rhs: QualityLevel,
+        #[case] expected: QualityLevel,
+    ) {
+        assert_that!(lhs.saturating_add_option(Some(rhs))).is_equal_to(expected);
     }
 }
