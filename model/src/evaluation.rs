@@ -4,7 +4,7 @@ use crate::probability::Probability;
 use std::cmp::Ordering;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Evaluation(f64);
 
 impl Evaluation {
@@ -64,6 +64,21 @@ impl Mul<Probability> for Evaluation {
     type Output = Evaluation;
 
     fn mul(mut self, rhs: Probability) -> Evaluation {
+        self *= rhs;
+        self
+    }
+}
+
+impl MulAssign<usize> for Evaluation {
+    fn mul_assign(&mut self, rhs: usize) {
+        self.0 *= rhs as f64;
+    }
+}
+
+impl Mul<usize> for Evaluation {
+    type Output = Evaluation;
+
+    fn mul(mut self, rhs: usize) -> Evaluation {
         self *= rhs;
         self
     }

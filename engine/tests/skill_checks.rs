@@ -2,14 +2,7 @@ use std::collections::HashMap;
 
 use engine::HolzfischEngine;
 
-use model::check::{
-    PartialSkillCheckState,
-    Reroll,
-    SkillCheckAction,
-    SkillCheckOutcome,
-    SkillCheckProbabilities,
-    SkillCheckState
-};
+use model::check::{PartialSkillCheckState, Reroll, SkillCheckAction, SkillCheckOutcome, SkillCheckOutcomeKind, SkillCheckOutcomeProbabilities, SkillCheckState};
 use model::engine::SkillCheckEngine;
 use model::evaluation::{Evaluation, SkillCheckEvaluator};
 use model::skill::{Attribute, QualityLevel, SkillPoints};
@@ -17,7 +10,6 @@ use model::skill::{Attribute, QualityLevel, SkillPoints};
 use kernal::prelude::*;
 use model::probability::Probability;
 use model::roll::Roll;
-use model::test_util::create_quality_level_map;
 
 struct PerOutcomeEvaluator {
     outcomes: HashMap<SkillCheckOutcome, Evaluation>
@@ -41,13 +33,19 @@ impl SkillCheckEvaluator for PerOutcomeEvaluator {
     }
 }
 
-struct QualityLevelEvaluator;
+#[derive(Default)]
+struct QualityLevelEvaluator {
+    fate_point_value: Evaluation
+}
 
 impl SkillCheckEvaluator for QualityLevelEvaluator {
     fn evaluate(&mut self, outcome: SkillCheckOutcome) -> Evaluation {
-        outcome.quality_level()
+        let quality_level_value = outcome.quality_level()
             .map(|ql| Evaluation::new(ql.as_u8() as f64).unwrap())
-            .unwrap_or(Evaluation::ZERO)
+            .unwrap_or(Evaluation::ZERO);
+        let fate_point_value = self.fate_point_value * outcome.remaining_fate_points;
+
+        quality_level_value + fate_point_value
     }
 }
 
@@ -59,6 +57,13 @@ fn eval(value: f64) -> Evaluation {
     Evaluation::new(value).unwrap()
 }
 
+fn outcome_no_fate_points(kind: SkillCheckOutcomeKind) -> SkillCheckOutcome {
+    SkillCheckOutcome {
+        kind,
+        remaining_fate_points: 0
+    }
+}
+
 const EPS: f64 = 1e-6;
 
 #[test]
@@ -66,11 +71,17 @@ fn simple_call_with_zero_skill_points() {
     let success_eval = eval(1.0);
     let critical_success_eval = eval(1_000.0);
     let spectacular_success_eval = eval(1_000_000.0);
+    let success =
+        outcome_no_fate_points(SkillCheckOutcomeKind::Success(QualityLevel::ONE));
+    let critical_success =
+        outcome_no_fate_points(SkillCheckOutcomeKind::CriticalSuccess(QualityLevel::ONE));
+    let spectacular_success =
+        outcome_no_fate_points(SkillCheckOutcomeKind::SpectacularSuccess(QualityLevel::ONE));
     let mut engine = HolzfischEngine {
         evaluator: PerOutcomeEvaluator::new([
-            (SkillCheckOutcome::Success(QualityLevel::ONE), success_eval),
-            (SkillCheckOutcome::CriticalSuccess(QualityLevel::ONE), critical_success_eval),
-            (SkillCheckOutcome::SpectacularSuccess(QualityLevel::ONE), spectacular_success_eval)
+            (success, success_eval),
+            (critical_success, critical_success_eval),
+            (spectacular_success, spectacular_success_eval)
         ])
     };
 
@@ -85,17 +96,14 @@ fn simple_call_with_zero_skill_points() {
     let success_probability = prob((1000.0 - 28.0) / 8000.0);
     let critical_success_probability = prob(57.0 / 8000.0);
     let spectacular_success_probability = prob(1.0 / 8000.0);
-    let expected_probs = SkillCheckProbabilities {
-        spectacular_failure_probability: prob(1.0 / 8000.0),
-        critical_failure_probability: prob(57.0 / 8000.0),
-        failure_probability: prob((7000.0 - 88.0) / 8000.0),
-        success_probabilities_by_quality_level:
-            create_quality_level_map([success_probability]),
-        critical_success_probabilities_by_quality_level:
-            create_quality_level_map([critical_success_probability]),
-        spectacular_success_probabilities_by_quality_level:
-            create_quality_level_map([spectacular_success_probability])
-    };
+    let expected_probs = SkillCheckOutcomeProbabilities::from([
+        (outcome_no_fate_points(SkillCheckOutcomeKind::SpectacularFailure), prob(1.0 / 8000.0)),
+        (outcome_no_fate_points(SkillCheckOutcomeKind::CriticalFailure), prob(57.0 / 8000.0)),
+        (outcome_no_fate_points(SkillCheckOutcomeKind::Failure), prob((7000.0 - 88.0) / 8000.0)),
+        (success, success_probability),
+        (critical_success, critical_success_probability),
+        (spectacular_success, spectacular_success_probability),
+    ]);
     let expected_evaluation =
         success_eval * success_probability
             + critical_success_eval * critical_success_probability
@@ -106,7 +114,7 @@ fn simple_call_with_zero_skill_points() {
 }
 
 #[test]
-fn given_roll_evaluates_options_correctly() {
+fn given_roll_with_fate_point_evaluates_options_correctly() {
     let skill_check_state = SkillCheckState {
         attributes: [Attribute::new(12), Attribute::new(11), Attribute::new(10)],
         rolls: [Roll::new(16).unwrap(), Roll::new(4).unwrap(), Roll::new(10).unwrap()],
@@ -116,7 +124,7 @@ fn given_roll_evaluates_options_correctly() {
     };
 
     let mut engine = HolzfischEngine {
-        evaluator: QualityLevelEvaluator,
+        evaluator: QualityLevelEvaluator::default(),
     };
 
     let evaluated = engine.evaluate_all_actions(skill_check_state);
@@ -130,8 +138,8 @@ fn given_roll_evaluates_options_correctly() {
     // Increasing QL yields a 100% probability of QL2, so evaluation 2.
     // Everything else should be worse.
 
-    let best_move = evaluated[0];
-    let second_best_move = evaluated[1];
+    let best_move = evaluated[0].clone();
+    let second_best_move = evaluated[1].clone();
 
     assert_that!(evaluated).has_length(9); // accept + increase QL + 7 reroll combos
     assert_that!(best_move.0)
@@ -139,4 +147,32 @@ fn given_roll_evaluates_options_correctly() {
     assert_that!(best_move.1.evaluation).is_close_to(eval(2.3), EPS);
     assert_that!(second_best_move.0).is_equal_to(SkillCheckAction::IncreaseQualityLevel);
     assert_that!(second_best_move.1.evaluation).is_close_to(eval(2.0), EPS);
+}
+
+#[test]
+fn given_roll_with_fate_point_evaluates_cost_of_fate_point_correctly() {
+    let skill_check_state = SkillCheckState {
+        attributes: [Attribute::new(9), Attribute::new(13), Attribute::new(11)],
+        rolls: [Roll::new(13).unwrap(), Roll::new(10).unwrap(), Roll::new(12).unwrap()],
+        skill_value: SkillPoints::new(8),
+        fate_points: 1,
+        quality_level_increase: None,
+    };
+
+    let mut engine = HolzfischEngine {
+        evaluator: QualityLevelEvaluator {
+            fate_point_value: eval(1.5)
+        },
+    };
+
+    let evaluated = engine.evaluate_all_actions(skill_check_state);
+
+    // None of the options yields an average increase of >1.5 QL, hence accepting is best.
+    // The value is the achieved QL (1) + the value of remaining fate points (1.5).
+
+    let best_move = evaluated[0].clone();
+
+    assert_that!(evaluated).has_length(9); // accept + increase QL + 7 reroll combos
+    assert_that!(best_move.0).is_equal_to(SkillCheckAction::Accept);
+    assert_that!(best_move.1.evaluation).is_close_to(eval(2.5), EPS);
 }

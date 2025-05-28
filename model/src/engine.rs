@@ -1,7 +1,7 @@
 use crate::check::{
     PartialSkillCheckState,
     SkillCheckAction,
-    SkillCheckProbabilities,
+    SkillCheckOutcomeProbabilities,
     SkillCheckState
 };
 use crate::evaluation::Evaluated;
@@ -9,13 +9,13 @@ use crate::evaluation::Evaluated;
 pub trait SkillCheckEngine {
 
     fn evaluate_action(&mut self, state: SkillCheckState, action: SkillCheckAction)
-        -> Evaluated<SkillCheckProbabilities>;
+        -> Evaluated<SkillCheckOutcomeProbabilities>;
 
     fn evaluate_partial(&mut self, state: PartialSkillCheckState)
-        -> Evaluated<SkillCheckProbabilities>;
+        -> Evaluated<SkillCheckOutcomeProbabilities>;
 
     fn evaluate_all_actions(&mut self, skill_check: SkillCheckState)
-            -> Vec<(SkillCheckAction, Evaluated<SkillCheckProbabilities>)> {
+            -> Vec<(SkillCheckAction, Evaluated<SkillCheckOutcomeProbabilities>)> {
         let mut result = skill_check.legal_actions().into_iter()
             .map(|action| (action, self.evaluate_action(skill_check, action)))
             .collect::<Vec<_>>();
@@ -25,10 +25,13 @@ pub trait SkillCheckEngine {
         result
     }
     
-    fn evaluate(&mut self, skill_check: SkillCheckState) -> Evaluated<SkillCheckProbabilities> {
+    fn evaluate(
+        &mut self,
+        skill_check: SkillCheckState
+    ) -> Evaluated<SkillCheckOutcomeProbabilities> {
         self.evaluate_all_actions(skill_check).into_iter()
             .map(|(_, evaluated)| evaluated)
-            .max_by_key(|&evaluated| evaluated.evaluation)
+            .max_by_key(|evaluated| evaluated.evaluation)
             .unwrap()
     }
 }

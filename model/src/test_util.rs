@@ -1,4 +1,4 @@
-use crate::check::SkillCheckProbabilities;
+use crate::check::SkillCheckOutcomeProbabilities;
 use crate::probability::Probability;
 use crate::skill::{QualityLevel, QualityLevelMap, QUALITY_LEVEL_COUNT};
 
@@ -48,18 +48,17 @@ impl AbsDiff for QualityLevelMap<Probability> {
     }
 }
 
-impl AbsDiff for SkillCheckProbabilities {
+impl AbsDiff for SkillCheckOutcomeProbabilities {
     type ReturnType = f64;
 
-    fn abs_diff(&self, other: &SkillCheckProbabilities) -> f64 {
-        self.spectacular_failure_probability.abs_diff(&other.spectacular_failure_probability)
-            .max(self.critical_failure_probability.abs_diff(&other.critical_failure_probability))
-            .max(self.failure_probability.abs_diff(&other.failure_probability))
-            .max(self.success_probabilities_by_quality_level
-                .abs_diff(&other.success_probabilities_by_quality_level))
-            .max(self.critical_success_probabilities_by_quality_level
-                .abs_diff(&other.critical_success_probabilities_by_quality_level))
-            .max(self.spectacular_success_probabilities_by_quality_level
-                .abs_diff(&other.spectacular_success_probabilities_by_quality_level))
+    fn abs_diff(&self, other: &SkillCheckOutcomeProbabilities) -> f64 {
+        self.outcomes()
+            .map(|(outcome, _)| outcome)
+            .chain(other.outcomes().map(|(outcome, _)| outcome))
+            .map(|outcome|
+                self.probability_of_outcome(outcome)
+                    .abs_diff(&other.probability_of_outcome(outcome)))
+            .reduce(f64::max)
+            .unwrap_or(0.0)
     }
 }

@@ -47,6 +47,7 @@ impl QualityLevel {
     }
 }
 
+// TODO can this be deleted?
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct QualityLevelMap<T>([T; QUALITY_LEVEL_COUNT]);
 
