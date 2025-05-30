@@ -1,9 +1,10 @@
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
+use std::ops::{Mul, MulAssign};
+
 use crate::probability::Probability;
 use crate::roll::Roll;
 use crate::skill::{Attribute, QualityLevel, SkillPoints};
-
-use std::ops::{Mul, MulAssign};
 
 /// The gameplay-related kind of outcome, i.e., whether it was successful and with what quality
 /// level.
@@ -103,6 +104,24 @@ impl Mul<Probability> for SkillCheckOutcomeProbabilities {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Aptitude {
+    max_dice: NonZeroUsize
+}
+
+impl Aptitude {
+    pub fn new(max_dice: usize) -> Option<Aptitude> {
+        NonZeroUsize::new(max_dice)
+            .filter(|max_dice| max_dice.get() <= DICE_PER_SKILL_CHECK)
+            .map(|max_dice| Aptitude { max_dice })
+    }
+
+    pub fn legal_rerolls(self) -> impl Iterator<Item = Reroll> {
+        Reroll::ALL_OPTIONS.into_iter()
+            .filter(move |reroll| reroll.num_dice() <= self.max_dice.get())
+    }
+}
+
 pub const DICE_PER_SKILL_CHECK: usize = 3;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -111,6 +130,7 @@ pub struct SkillCheckState {
     pub rolls: [Roll; DICE_PER_SKILL_CHECK],
     pub skill_value: SkillPoints,
     pub fate_points: usize,
+    pub aptitude: Option<Aptitude>,
     pub quality_level_increase: Option<QualityLevel>,
 }
 
@@ -118,23 +138,24 @@ impl SkillCheckState {
 
     pub fn legal_actions(self) -> Vec<SkillCheckAction> {
         let mut legal_actions = vec![SkillCheckAction::Accept];
-
-        if self.fate_points == 0 {
-            return legal_actions
-        }
-
         let current_outcome = self.current_outcome();
 
         if current_outcome.is_critical_failure() {
             return legal_actions
         }
 
-        legal_actions.extend(Reroll::ALL_OPTIONS.iter().cloned().map(SkillCheckAction::Reroll));
+        if self.fate_points > 0 {
+            legal_actions.extend(Reroll::ALL_OPTIONS.iter().cloned().map(SkillCheckAction::RerollByFate));
 
-        if let Some(quality_level) = current_outcome.quality_level() {
-            if quality_level != QualityLevel::SIX {
-                legal_actions.push(SkillCheckAction::IncreaseQualityLevel);
+            if let Some(quality_level) = current_outcome.quality_level() {
+                if quality_level != QualityLevel::SIX {
+                    legal_actions.push(SkillCheckAction::IncreaseQualityLevel);
+                }
             }
+        }
+
+        if let Some(aptitude) = self.aptitude {
+            legal_actions.extend(aptitude.legal_rerolls().map(SkillCheckAction::RerollByAptitude));
         }
 
         legal_actions
@@ -216,24 +237,25 @@ impl Reroll {
         }
     }
 
-    pub fn apply(self, state: SkillCheckState) -> PartialSkillCheckState {
+    pub fn num_dice(self) -> usize {
+        self.0.into_iter().filter(|&b| b).count()
+    }
+
+    pub fn apply(
+        self,
+        rolls: [Roll; DICE_PER_SKILL_CHECK]
+    ) -> [Option<Roll>; DICE_PER_SKILL_CHECK] {
         let mut fixed_rolls = [None; DICE_PER_SKILL_CHECK];
 
         self.0.iter().cloned().enumerate()
-            .zip(state.rolls.iter().cloned())
+            .zip(rolls.iter().cloned())
             .for_each(|((index, reroll), roll)| {
                 if !reroll {
                     fixed_rolls[index] = Some(roll);
                 }
             });
 
-        PartialSkillCheckState {
-            attributes: state.attributes,
-            fixed_rolls,
-            skill_value: state.skill_value,
-            fate_points: state.fate_points - 1,
-            quality_level_increase: state.quality_level_increase,
-        }
+        fixed_rolls
     }
 }
 
@@ -247,7 +269,8 @@ pub enum SkillCheckActionResult {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum SkillCheckAction {
     Accept,
-    Reroll(Reroll),
+    RerollByFate(Reroll),
+    RerollByAptitude(Reroll),
     IncreaseQualityLevel
 }
 
@@ -255,8 +278,39 @@ impl SkillCheckAction {
     pub fn apply(self, state: SkillCheckState) -> SkillCheckActionResult {
         match self {
             SkillCheckAction::Accept => SkillCheckActionResult::Done(state.current_outcome()),
-            SkillCheckAction::Reroll(reroll) =>
-                SkillCheckActionResult::PartialState(reroll.apply(state)),
+            SkillCheckAction::RerollByFate(reroll) => {
+                let fixed_rolls = reroll.apply(state.rolls);
+
+                SkillCheckActionResult::PartialState(PartialSkillCheckState {
+                    attributes: state.attributes,
+                    roll_caps: [None; DICE_PER_SKILL_CHECK],
+                    fixed_rolls,
+                    skill_value: state.skill_value,
+                    aptitude: state.aptitude,
+                    fate_points: state.fate_points - 1,
+                    quality_level_increase: state.quality_level_increase,
+                })
+            },
+            SkillCheckAction::RerollByAptitude(reroll) => {
+                let fixed_rolls = reroll.apply(state.rolls);
+                let mut roll_caps = [None; DICE_PER_SKILL_CHECK];
+
+                reroll.0.into_iter()
+                    .zip(state.rolls)
+                    .map(|(reroll, roll)| Some(roll).filter(|_| reroll))
+                    .enumerate()
+                    .for_each(|(index, roll_cap)| roll_caps[index] = roll_cap);
+
+                SkillCheckActionResult::PartialState(PartialSkillCheckState {
+                    attributes: state.attributes,
+                    roll_caps,
+                    fixed_rolls,
+                    skill_value: state.skill_value,
+                    aptitude: None,
+                    fate_points: state.fate_points,
+                    quality_level_increase: state.quality_level_increase,
+                })
+            },
             SkillCheckAction::IncreaseQualityLevel =>
                 SkillCheckActionResult::State(SkillCheckState {
                     quality_level_increase: state.quality_level_increase
@@ -272,9 +326,11 @@ impl SkillCheckAction {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct PartialSkillCheckState {
     pub attributes: [Attribute; DICE_PER_SKILL_CHECK],
+    pub roll_caps: [Option<Roll>; DICE_PER_SKILL_CHECK],
     pub fixed_rolls: [Option<Roll>; DICE_PER_SKILL_CHECK],
     pub skill_value: SkillPoints,
     pub fate_points: usize,
+    pub aptitude: Option<Aptitude>,
     pub quality_level_increase: Option<QualityLevel>,
 }
 
@@ -292,6 +348,7 @@ impl PartialSkillCheckState {
             rolls,
             skill_value: self.skill_value,
             fate_points: self.fate_points,
+            aptitude: self.aptitude,
             quality_level_increase: self.quality_level_increase,
         })
     }
@@ -307,7 +364,7 @@ mod tests {
 
     use rstest::rstest;
 
-    fn roll(roll: u8) -> Roll {
+    const fn roll(roll: u8) -> Roll {
         Roll::new(roll).unwrap()
     }
 
@@ -358,6 +415,7 @@ mod tests {
                 rolls: [roll(self.rolls[0]), roll(self.rolls[1]), roll(self.rolls[2])],
                 skill_value: SkillPoints::new(self.skill_value),
                 fate_points: self.fate_points,
+                aptitude: None,
                 quality_level_increase: self.quality_level_increase,
             }
         }
@@ -470,9 +528,11 @@ mod tests {
     ) {
         let partial_skill_check_state = PartialSkillCheckState {
             attributes: [Attribute::new(10), Attribute::new(11), Attribute::new(12)],
+            roll_caps: [None; DICE_PER_SKILL_CHECK],
             fixed_rolls: rolls,
             skill_value: SkillPoints::new(12),
             fate_points: 0,
+            aptitude: None,
             quality_level_increase: None,
         };
 
@@ -485,9 +545,11 @@ mod tests {
         let skill_value = SkillPoints::new(12);
         let partial_skill_check_state = PartialSkillCheckState {
             attributes,
+            roll_caps: [None; DICE_PER_SKILL_CHECK],
             fixed_rolls: [Some(roll(7)), Some(roll(8)), Some(roll(9))],
             skill_value,
             fate_points: 42,
+            aptitude: None,
             quality_level_increase: None,
         };
 
@@ -496,45 +558,95 @@ mod tests {
             rolls: [roll(7), roll(8), roll(9)],
             skill_value,
             fate_points: 42,
+            aptitude: None,
             quality_level_increase: None,
         });
     }
 
-    #[test]
-    fn skill_check_legal_actions_without_fate_point() {
-        let skill_check_state = SkillCheckState {
-            attributes: [Attribute::new(8), Attribute::new(8), Attribute::new(8)],
-            rolls: [roll(8), roll(8), roll(8)],
-            skill_value: SkillPoints::new(8),
-            fate_points: 0,
-            quality_level_increase: None,
-        };
+    const SKILL_CHECK_STATE_SUCCESS_NO_OPTIONS: SkillCheckState = SkillCheckState {
+        attributes: [Attribute::new(8), Attribute::new(8), Attribute::new(8)],
+        rolls: [roll(8), roll(8), roll(8)],
+        skill_value: SkillPoints::new(8),
+        fate_points: 0,
+        aptitude: None,
+        quality_level_increase: None,
+    };
 
-        assert_that!(skill_check_state.legal_actions()).contains_exactly_in_any_order([
-            SkillCheckAction::Accept
-        ]);
+    #[test]
+    fn skill_check_legal_actions_without_fate_point_or_aptitude() {
+        assert_that!(SKILL_CHECK_STATE_SUCCESS_NO_OPTIONS.legal_actions())
+            .contains_exactly_in_any_order([
+                SkillCheckAction::Accept
+            ]);
     }
 
     #[test]
     fn skill_check_legal_actions_with_fate_point_success() {
         let skill_check_state = SkillCheckState {
-            attributes: [Attribute::new(8), Attribute::new(8), Attribute::new(8)],
-            rolls: [roll(8), roll(8), roll(8)],
-            skill_value: SkillPoints::new(8),
             fate_points: 1,
-            quality_level_increase: None,
+            ..SKILL_CHECK_STATE_SUCCESS_NO_OPTIONS
         };
 
         assert_that!(skill_check_state.legal_actions()).contains_exactly_in_any_order([
             SkillCheckAction::Accept,
-            SkillCheckAction::Reroll(Reroll([false, false, true])),
-            SkillCheckAction::Reroll(Reroll([false, true, false])),
-            SkillCheckAction::Reroll(Reroll([false, true, true])),
-            SkillCheckAction::Reroll(Reroll([true, false, false])),
-            SkillCheckAction::Reroll(Reroll([true, false, true])),
-            SkillCheckAction::Reroll(Reroll([true, true, false])),
-            SkillCheckAction::Reroll(Reroll([true, true, true])),
+            SkillCheckAction::RerollByFate(Reroll([false, false, true])),
+            SkillCheckAction::RerollByFate(Reroll([false, true, false])),
+            SkillCheckAction::RerollByFate(Reroll([false, true, true])),
+            SkillCheckAction::RerollByFate(Reroll([true, false, false])),
+            SkillCheckAction::RerollByFate(Reroll([true, false, true])),
+            SkillCheckAction::RerollByFate(Reroll([true, true, false])),
+            SkillCheckAction::RerollByFate(Reroll([true, true, true])),
             SkillCheckAction::IncreaseQualityLevel
+        ]);
+    }
+
+    #[test]
+    fn skill_check_legal_actions_with_aptitude() {
+        let skill_check_state = SkillCheckState {
+            aptitude: Some(Aptitude::new(1).unwrap()),
+            ..SKILL_CHECK_STATE_SUCCESS_NO_OPTIONS
+        };
+
+        assert_that!(skill_check_state.legal_actions()).contains_exactly_in_any_order([
+            SkillCheckAction::Accept,
+            SkillCheckAction::RerollByAptitude(Reroll([false, false, true])),
+            SkillCheckAction::RerollByAptitude(Reroll([false, true, false])),
+            SkillCheckAction::RerollByAptitude(Reroll([true, false, false])),
+        ]);
+    }
+
+    #[test]
+    fn skill_check_legal_actions_with_double_aptitude() {
+        let skill_check_state = SkillCheckState {
+            aptitude: Some(Aptitude::new(2).unwrap()),
+            ..SKILL_CHECK_STATE_SUCCESS_NO_OPTIONS
+        };
+
+        assert_that!(skill_check_state.legal_actions()).contains_exactly_in_any_order([
+            SkillCheckAction::Accept,
+            SkillCheckAction::RerollByAptitude(Reroll([false, false, true])),
+            SkillCheckAction::RerollByAptitude(Reroll([false, true, false])),
+            SkillCheckAction::RerollByAptitude(Reroll([true, false, false])),
+            SkillCheckAction::RerollByAptitude(Reroll([true, true, false])),
+            SkillCheckAction::RerollByAptitude(Reroll([true, false, true])),
+            SkillCheckAction::RerollByAptitude(Reroll([false, true, true])),
+        ]);
+    }
+
+    #[rstest]
+    #[case::critical_failure([roll(20), roll(3), roll(20)])]
+    #[case::spectacular_failure([roll(20), roll(20), roll(20)])]
+    fn skill_check_legal_actions_with_aptitude_critical_failure(
+        #[case] rolls: [Roll; DICE_PER_SKILL_CHECK]
+    ) {
+        let skill_check_state = SkillCheckState {
+            rolls,
+            aptitude: Some(Aptitude::new(1).unwrap()),
+            ..SKILL_CHECK_STATE_SUCCESS_NO_OPTIONS
+        };
+
+        assert_that!(skill_check_state.legal_actions()).contains_exactly_in_any_order([
+            SkillCheckAction::Accept
         ]);
     }
 
@@ -551,18 +663,18 @@ mod tests {
             rolls,
             skill_value: SkillPoints::new(18),
             fate_points: 1,
-            quality_level_increase: None,
+            ..SKILL_CHECK_STATE_SUCCESS_NO_OPTIONS
         };
 
         assert_that!(skill_check_state.legal_actions()).contains_exactly_in_any_order([
             SkillCheckAction::Accept,
-            SkillCheckAction::Reroll(Reroll([false, false, true])),
-            SkillCheckAction::Reroll(Reroll([false, true, false])),
-            SkillCheckAction::Reroll(Reroll([false, true, true])),
-            SkillCheckAction::Reroll(Reroll([true, false, false])),
-            SkillCheckAction::Reroll(Reroll([true, false, true])),
-            SkillCheckAction::Reroll(Reroll([true, true, false])),
-            SkillCheckAction::Reroll(Reroll([true, true, true]))
+            SkillCheckAction::RerollByFate(Reroll([false, false, true])),
+            SkillCheckAction::RerollByFate(Reroll([false, true, false])),
+            SkillCheckAction::RerollByFate(Reroll([false, true, true])),
+            SkillCheckAction::RerollByFate(Reroll([true, false, false])),
+            SkillCheckAction::RerollByFate(Reroll([true, false, true])),
+            SkillCheckAction::RerollByFate(Reroll([true, true, false])),
+            SkillCheckAction::RerollByFate(Reroll([true, true, true]))
         ]);
     }
 
@@ -573,11 +685,9 @@ mod tests {
         #[case] rolls: [Roll; DICE_PER_SKILL_CHECK]
     ) {
         let skill_check_state = SkillCheckState {
-            attributes: [Attribute::new(15), Attribute::new(16), Attribute::new(17)],
             rolls,
-            skill_value: SkillPoints::new(18),
             fate_points: 1,
-            quality_level_increase: None,
+            ..SKILL_CHECK_STATE_SUCCESS_NO_OPTIONS
         };
 
         assert_that!(skill_check_state.legal_actions()).contains_exactly_in_any_order([
@@ -593,7 +703,7 @@ mod tests {
     #[case(Reroll([true, false, true]), [None, Some(roll(2)), None])]
     #[case(Reroll([true, true, false]), [None, None, Some(roll(3))])]
     #[case(Reroll([true, true, true]), [None, None, None])]
-    fn reroll_apply(
+    fn reroll_fate_apply(
         #[case] reroll: Reroll,
         #[case] expected_rolls: [Option<Roll>; DICE_PER_SKILL_CHECK]
     ) {
@@ -602,15 +712,66 @@ mod tests {
             rolls: [roll(1), roll(2), roll(3)],
             skill_value: SkillPoints::new(5),
             fate_points: 2,
+            aptitude: Some(Aptitude::new(1).unwrap()),
             quality_level_increase: None,
         };
-        let action = SkillCheckAction::Reroll(reroll);
+        let action = SkillCheckAction::RerollByFate(reroll);
 
         let result = action.apply(skill_check_state);
 
         if let SkillCheckActionResult::PartialState(applied_state) = result {
             assert_that!(applied_state.fixed_rolls).is_equal_to(expected_rolls);
             assert_that!(applied_state.fate_points).is_equal_to(1);
+            assert_that!(applied_state.aptitude).is_some();
+        }
+        else {
+            panic!("skill check action application has wrong kind of result");
+        }
+    }
+
+    #[rstest]
+    #[case(
+        Reroll([false, false, true]),
+        [Some(roll(1)), Some(roll(2)), None],
+        [None, None, Some(roll(3))],
+    )]
+    #[case(
+        Reroll([false, true, false]),
+        [Some(roll(1)), None, Some(roll(3))],
+        [None, Some(roll(2)), None],
+    )]
+    #[case(
+        Reroll([true, false, false]),
+        [None, Some(roll(2)), Some(roll(3))],
+        [Some(roll(1)), None, None],
+    )]
+    #[case(
+        Reroll([true, true, true]),
+        [None, None, None],
+        [Some(roll(1)), Some(roll(2)), Some(roll(3))],
+    )]
+    fn reroll_aptitude_apply(
+        #[case] reroll: Reroll,
+        #[case] expected_rolls: [Option<Roll>; DICE_PER_SKILL_CHECK],
+        #[case] expected_roll_caps: [Option<Roll>; DICE_PER_SKILL_CHECK]
+    ) {
+        let skill_check_state = SkillCheckState {
+            attributes: [Attribute::new(8), Attribute::new(9), Attribute::new(10)],
+            rolls: [roll(1), roll(2), roll(3)],
+            skill_value: SkillPoints::new(5),
+            fate_points: 1,
+            aptitude: Some(Aptitude::new(2).unwrap()),
+            quality_level_increase: None,
+        };
+        let action = SkillCheckAction::RerollByAptitude(reroll);
+
+        let result = action.apply(skill_check_state);
+
+        if let SkillCheckActionResult::PartialState(applied_state) = result {
+            assert_that!(applied_state.roll_caps).is_equal_to(expected_roll_caps);
+            assert_that!(applied_state.fixed_rolls).is_equal_to(expected_rolls);
+            assert_that!(applied_state.fate_points).is_equal_to(1);
+            assert_that!(applied_state.aptitude).is_none();
         }
         else {
             panic!("skill check action application has wrong kind of result");
@@ -624,6 +785,7 @@ mod tests {
             rolls: [roll(13), roll(2), roll(15)],
             skill_value: SkillPoints::new(6),
             fate_points: 1,
+            aptitude: Some(Aptitude::new(1).unwrap()),
             quality_level_increase: None,
         };
 
@@ -655,6 +817,7 @@ mod tests {
             rolls: [roll(13), roll(2), roll(15)],
             skill_value: SkillPoints::new(6),
             fate_points: 1,
+            aptitude: None,
             quality_level_increase: old_quality_level_increase,
         };
 
@@ -741,5 +904,24 @@ mod tests {
         let epsilon = 0.001;
 
         assert_that!(lhs).is_close_to(expected, epsilon);
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(4)]
+    #[case(usize::MAX)]
+    fn aptitude_new_reject(#[case] max_dice: usize) {
+        assert_that!(Aptitude::new(max_dice)).is_none();
+    }
+
+    #[rstest]
+    #[case(1)]
+    #[case(2)]
+    #[case(3)]
+    fn aptitude_new_ok(#[case] max_dice: usize) {
+        let aptitude = Aptitude::new(max_dice);
+
+        assert_that!(aptitude).is_some();
+        assert_that!(aptitude.unwrap().max_dice.get()).is_equal_to(max_dice);
     }
 }

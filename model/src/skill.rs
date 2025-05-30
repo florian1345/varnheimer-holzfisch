@@ -81,7 +81,7 @@ pub struct SkillPoints(i32);
 
 impl SkillPoints {
 
-    pub fn new(value: i32) -> SkillPoints {
+    pub const fn new(value: i32) -> SkillPoints {
         SkillPoints(value)
     }
 
@@ -138,7 +138,7 @@ pub struct Attribute(i32);
 
 impl Attribute {
 
-    pub fn new(value: i32) -> Attribute {
+    pub const fn new(value: i32) -> Attribute {
         Attribute(value)
     }
 

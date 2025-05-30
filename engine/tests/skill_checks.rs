@@ -2,12 +2,22 @@ use std::collections::HashMap;
 
 use engine::HolzfischEngine;
 
-use model::check::{PartialSkillCheckState, Reroll, SkillCheckAction, SkillCheckOutcome, SkillCheckOutcomeKind, SkillCheckOutcomeProbabilities, SkillCheckState};
+use model::check::{
+    Aptitude,
+    PartialSkillCheckState,
+    Reroll,
+    SkillCheckAction,
+    SkillCheckOutcome,
+    SkillCheckOutcomeKind,
+    SkillCheckOutcomeProbabilities,
+    SkillCheckState
+};
 use model::engine::SkillCheckEngine;
 use model::evaluation::{Evaluation, SkillCheckEvaluator};
 use model::skill::{Attribute, QualityLevel, SkillPoints};
 
 use kernal::prelude::*;
+use rstest::rstest;
 use model::probability::Probability;
 use model::roll::Roll;
 
@@ -33,15 +43,26 @@ impl SkillCheckEvaluator for PerOutcomeEvaluator {
     }
 }
 
-#[derive(Default)]
 struct QualityLevelEvaluator {
+    eval_by_ql: HashMap<QualityLevel, Evaluation>,
     fate_point_value: Evaluation
+}
+
+impl Default for QualityLevelEvaluator {
+    fn default() -> QualityLevelEvaluator {
+        QualityLevelEvaluator {
+            eval_by_ql: QualityLevel::ALL.into_iter()
+                .map(|ql| (ql, Evaluation::new(ql.as_u8() as f64).unwrap()))
+                .collect(),
+            fate_point_value: Default::default(),
+        }
+    }
 }
 
 impl SkillCheckEvaluator for QualityLevelEvaluator {
     fn evaluate(&mut self, outcome: SkillCheckOutcome) -> Evaluation {
         let quality_level_value = outcome.quality_level()
-            .map(|ql| Evaluation::new(ql.as_u8() as f64).unwrap())
+            .and_then(|ql| self.eval_by_ql.get(&ql).cloned())
             .unwrap_or(Evaluation::ZERO);
         let fate_point_value = self.fate_point_value * outcome.remaining_fate_points;
 
@@ -87,9 +108,11 @@ fn simple_call_with_zero_skill_points() {
 
     let evaluated = engine.evaluate_partial(PartialSkillCheckState {
         attributes: [Attribute::new(10), Attribute::new(10), Attribute::new(10)],
+        roll_caps: [None, None, None],
         fixed_rolls: [None, None, None],
         skill_value: SkillPoints::new(0),
         fate_points: 0,
+        aptitude: None,
         quality_level_increase: None,
     });
 
@@ -120,6 +143,7 @@ fn given_roll_with_fate_point_evaluates_options_correctly() {
         rolls: [Roll::new(16).unwrap(), Roll::new(4).unwrap(), Roll::new(10).unwrap()],
         skill_value: SkillPoints::new(7),
         fate_points: 1,
+        aptitude: None,
         quality_level_increase: None,
     };
 
@@ -143,7 +167,7 @@ fn given_roll_with_fate_point_evaluates_options_correctly() {
 
     assert_that!(evaluated).has_length(9); // accept + increase QL + 7 reroll combos
     assert_that!(best_move.0)
-        .is_equal_to(SkillCheckAction::Reroll(Reroll::new([true, false, false]).unwrap()));
+        .is_equal_to(SkillCheckAction::RerollByFate(Reroll::new([true, false, false]).unwrap()));
     assert_that!(best_move.1.evaluation).is_close_to(eval(2.3), EPS);
     assert_that!(second_best_move.0).is_equal_to(SkillCheckAction::IncreaseQualityLevel);
     assert_that!(second_best_move.1.evaluation).is_close_to(eval(2.0), EPS);
@@ -156,12 +180,14 @@ fn given_roll_with_fate_point_evaluates_cost_of_fate_point_correctly() {
         rolls: [Roll::new(13).unwrap(), Roll::new(10).unwrap(), Roll::new(12).unwrap()],
         skill_value: SkillPoints::new(8),
         fate_points: 1,
+        aptitude: None,
         quality_level_increase: None,
     };
 
     let mut engine = HolzfischEngine {
         evaluator: QualityLevelEvaluator {
-            fate_point_value: eval(1.5)
+            fate_point_value: eval(1.5),
+            ..Default::default()
         },
     };
 
@@ -175,4 +201,49 @@ fn given_roll_with_fate_point_evaluates_cost_of_fate_point_correctly() {
     assert_that!(evaluated).has_length(9); // accept + increase QL + 7 reroll combos
     assert_that!(best_move.0).is_equal_to(SkillCheckAction::Accept);
     assert_that!(best_move.1.evaluation).is_close_to(eval(2.5), EPS);
+}
+
+#[rstest]
+#[case::max_success_probability(
+    [(QualityLevel::ONE, eval(1.0)), (QualityLevel::TWO, eval(1.0))],
+    SkillCheckAction::RerollByAptitude(Reroll::new([true, false, false]).unwrap()),
+    eval(0.75)
+)]
+#[case::max_average_ql(
+    [(QualityLevel::ONE, eval(1.0)), (QualityLevel::TWO, eval(2.0))],
+    SkillCheckAction::RerollByAptitude(Reroll::new([false, false, true]).unwrap()),
+    eval(1.1)
+)]
+fn given_roll_with_aptitude_evaluates_options_correctly(
+    #[case] eval_by_ql: impl IntoIterator<Item = (QualityLevel, Evaluation)>,
+    #[case] expected_best_action: SkillCheckAction,
+    #[case] expected_evaluation: Evaluation,
+) {
+    // There are only 2 reasonable options: reroll 16 or 14. Which is better depends on evaluator:
+    // - 16 gives 75% chance of success, but only at QL 1
+    // - 14 gives 65% chance of success, but 45% chance of QL 2
+
+    let skill_check_state = SkillCheckState {
+        attributes: [Attribute::new(15), Attribute::new(14), Attribute::new(9)],
+        rolls: [Roll::new(16).unwrap(), Roll::new(4).unwrap(), Roll::new(14).unwrap()],
+        skill_value: SkillPoints::new(5),
+        fate_points: 0,
+        aptitude: Some(Aptitude::new(1).unwrap()),
+        quality_level_increase: None,
+    };
+
+    let mut engine = HolzfischEngine {
+        evaluator: QualityLevelEvaluator {
+            eval_by_ql: eval_by_ql.into_iter().collect(),
+            ..Default::default()
+        }
+    };
+
+    let evaluated = engine.evaluate_all_actions(skill_check_state);
+
+    let best_move = evaluated[0].clone();
+
+    assert_that!(evaluated).has_length(4); // accept + reroll each die
+    assert_that!(best_move.0).is_equal_to(expected_best_action);
+    assert_that!(best_move.1.evaluation).is_close_to(expected_evaluation, EPS);
 }

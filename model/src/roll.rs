@@ -21,12 +21,15 @@ impl Roll {
         result
     };
 
-    pub fn new(value: u8) -> Option<Roll> {
+    pub const fn new(value: u8) -> Option<Roll> {
         if value as usize > DICE_SIDES {
             return None;
         }
 
-        NonZeroU8::new(value).map(Roll)
+        match NonZeroU8::new(value) {
+            Some(value) => Some(Roll(value)),
+            None => None,
+        }
     }
 
     pub fn as_u8(self) -> u8 {

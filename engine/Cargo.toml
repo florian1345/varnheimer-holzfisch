@@ -9,3 +9,4 @@ model = { path = "../model" }
 [dev-dependencies]
 model = { path = "../model", features = [ "test-util" ] }
 kernal = "0.4.0"
+rstest = "0.25.0"
