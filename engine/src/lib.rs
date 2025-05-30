@@ -10,13 +10,13 @@ use model::evaluation::{Evaluated, Evaluation, SkillCheckEvaluator};
 use model::probability::Probability;
 use model::roll::{Roll, DICE_SIDES};
 
-pub struct HolzfischEngine<EvaluatorT> {
+pub struct VarnheimerHolzfischEngine<EvaluatorT> {
     pub evaluator: EvaluatorT
 }
 
 const DIE_RESULT_PROBABILITY: Probability = Probability::new(1.0f64 / DICE_SIDES as f64).unwrap();
 
-impl<EvaluatorT: SkillCheckEvaluator> SkillCheckEngine for HolzfischEngine<EvaluatorT> {
+impl<EvaluatorT: SkillCheckEvaluator> SkillCheckEngine for VarnheimerHolzfischEngine<EvaluatorT> {
     fn evaluate_action(
         &mut self,
         state: SkillCheckState,

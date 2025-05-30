@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use engine::HolzfischEngine;
+use engine::VarnheimerHolzfischEngine;
 
 use model::check::{
     Aptitude,
@@ -98,7 +98,7 @@ fn simple_call_with_zero_skill_points() {
         outcome_no_fate_points(SkillCheckOutcomeKind::CriticalSuccess(QualityLevel::ONE));
     let spectacular_success =
         outcome_no_fate_points(SkillCheckOutcomeKind::SpectacularSuccess(QualityLevel::ONE));
-    let mut engine = HolzfischEngine {
+    let mut engine = VarnheimerHolzfischEngine {
         evaluator: PerOutcomeEvaluator::new([
             (success, success_eval),
             (critical_success, critical_success_eval),
@@ -147,7 +147,7 @@ fn given_roll_with_fate_point_evaluates_options_correctly() {
         quality_level_increase: None,
     };
 
-    let mut engine = HolzfischEngine {
+    let mut engine = VarnheimerHolzfischEngine {
         evaluator: QualityLevelEvaluator::default(),
     };
 
@@ -184,7 +184,7 @@ fn given_roll_with_fate_point_evaluates_cost_of_fate_point_correctly() {
         quality_level_increase: None,
     };
 
-    let mut engine = HolzfischEngine {
+    let mut engine = VarnheimerHolzfischEngine {
         evaluator: QualityLevelEvaluator {
             fate_point_value: eval(1.5),
             ..Default::default()
@@ -232,7 +232,7 @@ fn given_roll_with_aptitude_evaluates_options_correctly(
         quality_level_increase: None,
     };
 
-    let mut engine = HolzfischEngine {
+    let mut engine = VarnheimerHolzfischEngine {
         evaluator: QualityLevelEvaluator {
             eval_by_ql: eval_by_ql.into_iter().collect(),
             ..Default::default()
