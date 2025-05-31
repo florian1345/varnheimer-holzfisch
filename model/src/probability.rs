@@ -24,6 +24,10 @@ impl Probability {
         Probability::new(self.0 + other.0)
     }
 
+    pub fn saturating_mul(self, factor: usize) -> Probability {
+        Probability((self.0 * factor as f64).min(1.0))
+    }
+
     pub fn as_f64(self) -> f64 {
         self.0
     }
@@ -69,6 +73,10 @@ mod tests {
 
     use rstest_reuse::{apply, template};
 
+    fn prob(value: f64) -> Probability {
+        Probability::new(value).unwrap()
+    }
+
     #[rstest]
     #[case::neg_infinity(f64::NEG_INFINITY)]
     #[case::negative(-0.001)]
@@ -108,24 +116,24 @@ mod tests {
 
     #[apply(additions_in_bounds)]
     fn saturating_add_within_bounds_returns_sum(#[case] lhs: f64, #[case] rhs: f64, #[case] expected: f64) {
-        let lhs = Probability::new(lhs).unwrap();
-        let rhs = Probability::new(rhs).unwrap();
+        let lhs = prob(lhs);
+        let rhs = prob(rhs);
 
         assert_that!(lhs.saturating_add(rhs).as_f64()).is_close_to(expected, 0.001);
     }
 
     #[apply(additions_out_of_bounds)]
     fn saturating_add_crossing_upper_bound_is_one(#[case] lhs: f64, #[case] rhs: f64) {
-        let lhs = Probability::new(lhs).unwrap();
-        let rhs = Probability::new(rhs).unwrap();
+        let lhs = prob(lhs);
+        let rhs = prob(rhs);
 
         assert_that!(lhs.saturating_add(rhs).as_f64()).is_close_to(1.0, 0.001);
     }
 
     #[apply(additions_in_bounds)]
     fn checked_add_within_bounds_returns_sum(#[case] lhs: f64, #[case] rhs: f64, #[case] expected: f64) {
-        let lhs = Probability::new(lhs).unwrap();
-        let rhs = Probability::new(rhs).unwrap();
+        let lhs = prob(lhs);
+        let rhs = prob(rhs);
         let sum = lhs.checked_add(rhs);
 
         assert_that!(sum).is_some();
@@ -134,33 +142,49 @@ mod tests {
 
     #[apply(additions_out_of_bounds)]
     fn checked_add_crossing_upper_bound_is_none(#[case] lhs: f64, #[case] rhs: f64) {
-        let lhs = Probability::new(lhs).unwrap();
-        let rhs = Probability::new(rhs).unwrap();
+        let lhs = prob(lhs);
+        let rhs = prob(rhs);
 
         assert_that!(lhs.checked_add(rhs)).is_none();
     }
 
     #[apply(additions_in_bounds)]
     fn add_within_bounds_returns_sum(#[case] lhs: f64, #[case] rhs: f64, #[case] expected: f64) {
-        let lhs = Probability::new(lhs).unwrap();
-        let rhs = Probability::new(rhs).unwrap();
+        let lhs = prob(lhs);
+        let rhs = prob(rhs);
 
         assert_that!((lhs + rhs).as_f64()).is_close_to(expected, 0.001);
     }
 
     #[apply(additions_out_of_bounds)]
     fn add_crossing_upper_bound_panics(#[case] lhs: f64, #[case] rhs: f64) {
-        let lhs = Probability::new(lhs).unwrap();
-        let rhs = Probability::new(rhs).unwrap();
+        let lhs = prob(lhs);
+        let rhs = prob(rhs);
 
         assert_that!(|| lhs + rhs).panics();
     }
 
     #[test]
     fn mul_works() {
-        let lhs = Probability::new(0.5).unwrap();
-        let rhs = Probability::new(0.4).unwrap();
+        let lhs = prob(0.5);
+        let rhs = prob(0.4);
 
         assert_that!((lhs * rhs).as_f64()).is_close_to(0.2, 0.001);
+    }
+
+    #[rstest]
+    #[case(1.0, 0, 0.0)]
+    #[case(1.0, 1, 1.0)]
+    #[case(1.0, 2, 1.0)]
+    #[case(0.3, 2, 0.6)]
+    #[case(0.3, 3, 0.9)]
+    #[case(0.3, 4, 1.0)]
+    #[case(0.0, 4, 0.0)]
+    fn saturating_mul_with_usize_works(
+        #[case] lhs: f64,
+        #[case] rhs: usize,
+        #[case] expected: f64
+    ) {
+        assert_that!(prob(lhs).saturating_mul(rhs)).is_close_to(prob(expected), 0.001);
     }
 }

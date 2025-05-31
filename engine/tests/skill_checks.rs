@@ -247,3 +247,33 @@ fn given_roll_with_aptitude_evaluates_options_correctly(
     assert_that!(best_move.0).is_equal_to(expected_best_action);
     assert_that!(best_move.1.evaluation).is_close_to(expected_evaluation, EPS);
 }
+
+#[test]
+fn given_roll_with_aptitude_evaluates_reroll_with_cap_correctly() {
+    // Although rerolling the 8 would come with a risk of decreasing the quality or failing the
+    // check, since aptitude cannot make the result worse, it is worth rerolling.
+    // Result: 35 % QL 3, 65 % QL 2 => value 2.35
+
+    let skill_check_state = SkillCheckState {
+        attributes: [Attribute::new(9), Attribute::new(7), Attribute::new(9)],
+        rolls: [Roll::new(3).unwrap(), Roll::new(8).unwrap(), Roll::new(5).unwrap()],
+        skill_value: SkillPoints::new(7),
+        fate_points: 0,
+        aptitude: Some(Aptitude::new(1).unwrap()),
+        quality_level_increase: None,
+    };
+
+    let mut engine = VarnheimerHolzfischEngine {
+        evaluator: QualityLevelEvaluator::default()
+    };
+
+    let evaluated = engine.evaluate_all_actions(skill_check_state);
+
+    let best_move = evaluated[0].clone();
+
+    assert_that!(evaluated).has_length(4); // accept + reroll each die
+    assert_that!(best_move.0).is_equal_to(
+        SkillCheckAction::RerollByAptitude(Reroll::new([false, true, false]).unwrap())
+    );
+    assert_that!(best_move.1.evaluation).is_close_to(eval(2.35), EPS);
+}
