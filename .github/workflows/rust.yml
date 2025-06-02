@@ -27,8 +27,6 @@ jobs:
         rustup component add clippy
         cargo clippy --verbose --all-features
     - name: Rustfmt
-      run: |
-        rustup component add rustfmt
-        cargo fmt --all -- --check
+      run: cargo +nightly fmt --all -- --check
     - name: Documentation
       run: cargo doc --verbose --all-features
