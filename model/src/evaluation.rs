@@ -1,14 +1,13 @@
-use crate::check::SkillCheckOutcome;
-use crate::probability::Probability;
-
 use std::cmp::Ordering;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg};
+
+use crate::check::SkillCheckOutcome;
+use crate::probability::Probability;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Evaluation(f64);
 
 impl Evaluation {
-
     pub const ZERO: Evaluation = Evaluation(0.0);
 
     pub const fn new(value: f64) -> Option<Evaluation> {
@@ -95,29 +94,26 @@ impl Neg for Evaluation {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Evaluated<T> {
     pub evaluated: T,
-    pub evaluation: Evaluation
+    pub evaluation: Evaluation,
 }
 
 impl<T> Evaluated<T> {
-
     pub fn compare_evaluation(&self, other: &Evaluated<T>) -> Ordering {
         self.evaluation.cmp(&other.evaluation)
     }
 }
 
 pub trait SkillCheckEvaluator {
-
     fn evaluate(&mut self, outcome: SkillCheckOutcome) -> Evaluation;
 }
 
 #[cfg(test)]
 mod tests {
 
-    use super::*;
-
     use kernal::prelude::*;
-
     use rstest::rstest;
+
+    use super::*;
 
     #[test]
     fn new_evaluation_with_nan_is_none() {
@@ -169,11 +165,11 @@ mod tests {
     fn comparing_evaluated_works() {
         let smaller = Evaluated {
             evaluated: (),
-            evaluation: Evaluation::new(1.0).unwrap()
+            evaluation: Evaluation::new(1.0).unwrap(),
         };
         let larger = Evaluated {
             evaluated: (),
-            evaluation: Evaluation::new(2.0).unwrap()
+            evaluation: Evaluation::new(2.0).unwrap(),
         };
 
         assert_that!(smaller.compare_evaluation(&larger)).is_equal_to(Ordering::Less);

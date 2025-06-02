@@ -6,7 +6,6 @@ pub const DICE_SIDES: usize = 20;
 pub struct Roll(NonZeroU8);
 
 impl Roll {
-
     pub const MIN: Roll = Roll(NonZeroU8::new(1).unwrap());
     pub const MAX: Roll = Roll(NonZeroU8::new(20).unwrap());
     pub const ALL: [Roll; DICE_SIDES] = {
@@ -40,11 +39,10 @@ impl Roll {
 #[cfg(test)]
 mod tests {
 
-    use super::*;
-
     use kernal::prelude::*;
-
     use rstest::rstest;
+
+    use super::*;
 
     #[rstest]
     #[case::zero(0)]
@@ -66,7 +64,11 @@ mod tests {
 
     #[test]
     fn all_rolls_correctly_initialized() {
-        let all_rolls_as_u8 = Roll::ALL.iter().copied().map(Roll::as_u8).collect::<Vec<_>>();
+        let all_rolls_as_u8 = Roll::ALL
+            .iter()
+            .copied()
+            .map(Roll::as_u8)
+            .collect::<Vec<_>>();
 
         assert_that!(all_rolls_as_u8).contains_exactly_in_given_order(1..=20);
     }

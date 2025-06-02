@@ -4,7 +4,6 @@ use std::ops::{Add, AddAssign, Mul, MulAssign};
 pub struct Probability(f64);
 
 impl Probability {
-
     pub const ONE: Probability = Probability(1.0);
     pub const ZERO: Probability = Probability(0.0);
 
@@ -65,13 +64,11 @@ impl Mul for Probability {
 #[cfg(test)]
 mod tests {
 
-    use super::*;
-
     use kernal::prelude::*;
-
     use rstest::rstest;
-
     use rstest_reuse::{apply, template};
+
+    use super::*;
 
     fn prob(value: f64) -> Probability {
         Probability::new(value).unwrap()
@@ -115,7 +112,11 @@ mod tests {
     fn additions_out_of_bounds(#[case] lhs: f64, #[case] rhs: f64) {}
 
     #[apply(additions_in_bounds)]
-    fn saturating_add_within_bounds_returns_sum(#[case] lhs: f64, #[case] rhs: f64, #[case] expected: f64) {
+    fn saturating_add_within_bounds_returns_sum(
+        #[case] lhs: f64,
+        #[case] rhs: f64,
+        #[case] expected: f64,
+    ) {
         let lhs = prob(lhs);
         let rhs = prob(rhs);
 
@@ -131,7 +132,11 @@ mod tests {
     }
 
     #[apply(additions_in_bounds)]
-    fn checked_add_within_bounds_returns_sum(#[case] lhs: f64, #[case] rhs: f64, #[case] expected: f64) {
+    fn checked_add_within_bounds_returns_sum(
+        #[case] lhs: f64,
+        #[case] rhs: f64,
+        #[case] expected: f64,
+    ) {
         let lhs = prob(lhs);
         let rhs = prob(rhs);
         let sum = lhs.checked_add(rhs);
@@ -183,7 +188,7 @@ mod tests {
     fn saturating_mul_with_usize_works(
         #[case] lhs: f64,
         #[case] rhs: usize,
-        #[case] expected: f64
+        #[case] expected: f64,
     ) {
         assert_that!(prob(lhs).saturating_mul(rhs)).is_close_to(prob(expected), 0.001);
     }

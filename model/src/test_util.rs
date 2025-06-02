@@ -1,13 +1,13 @@
-use crate::check::SkillCheckOutcomeProbabilities;
-use crate::probability::Probability;
-use crate::skill::{QualityLevel, QualityLevelMap, QUALITY_LEVEL_COUNT};
-
 use kernal::abs_diff::AbsDiff;
 use kernal::prelude::*;
+
+use crate::check::SkillCheckOutcomeProbabilities;
 use crate::evaluation::Evaluation;
+use crate::probability::Probability;
+use crate::skill::{QUALITY_LEVEL_COUNT, QualityLevel, QualityLevelMap};
 
 pub fn create_quality_level_map<T: Copy + Default, const LEN: usize>(
-    values: [T; LEN]
+    values: [T; LEN],
 ) -> QualityLevelMap<T> {
     assert_that!(LEN).is_less_than_or_equal_to(QUALITY_LEVEL_COUNT);
 
@@ -55,9 +55,10 @@ impl AbsDiff for SkillCheckOutcomeProbabilities {
         self.outcomes()
             .map(|(outcome, _)| outcome)
             .chain(other.outcomes().map(|(outcome, _)| outcome))
-            .map(|outcome|
+            .map(|outcome| {
                 self.probability_of_outcome(outcome)
-                    .abs_diff(&other.probability_of_outcome(outcome)))
+                    .abs_diff(&other.probability_of_outcome(outcome))
+            })
             .reduce(f64::max)
             .unwrap_or(0.0)
     }

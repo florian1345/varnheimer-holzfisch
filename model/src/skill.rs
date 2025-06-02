@@ -1,9 +1,9 @@
-use crate::roll::Roll;
-
 use std::iter::Sum;
 use std::num::NonZeroU8;
 use std::ops::{Add, AddAssign, Index, IndexMut, Sub, SubAssign};
 use std::slice::Iter;
+
+use crate::roll::Roll;
 
 pub const QUALITY_LEVEL_COUNT: usize = 6;
 
@@ -11,7 +11,6 @@ pub const QUALITY_LEVEL_COUNT: usize = 6;
 pub struct QualityLevel(NonZeroU8);
 
 impl QualityLevel {
-
     pub const ONE: QualityLevel = QualityLevel(NonZeroU8::new(1).unwrap());
     pub const TWO: QualityLevel = QualityLevel(NonZeroU8::new(2).unwrap());
     pub const THREE: QualityLevel = QualityLevel(NonZeroU8::new(3).unwrap());
@@ -25,11 +24,16 @@ impl QualityLevel {
         QualityLevel::THREE,
         QualityLevel::FOUR,
         QualityLevel::FIVE,
-        QualityLevel::SIX
+        QualityLevel::SIX,
     ];
 
     pub fn saturating_add(self, other: QualityLevel) -> QualityLevel {
-        QualityLevel(self.0.checked_add(other.0.get()).unwrap().min(QualityLevel::SIX.0))
+        QualityLevel(
+            self.0
+                .checked_add(other.0.get())
+                .unwrap()
+                .min(QualityLevel::SIX.0),
+        )
     }
 
     pub fn saturating_add_option(self, other: Option<QualityLevel>) -> QualityLevel {
@@ -52,7 +56,6 @@ impl QualityLevel {
 pub struct QualityLevelMap<T>([T; QUALITY_LEVEL_COUNT]);
 
 impl<T> QualityLevelMap<T> {
-
     pub fn iter(&self) -> Iter<'_, T> {
         self.0.iter()
     }
@@ -80,7 +83,6 @@ impl<T> IndexMut<QualityLevel> for QualityLevelMap<T> {
 pub struct SkillPoints(i32);
 
 impl SkillPoints {
-
     pub const fn new(value: i32) -> SkillPoints {
         SkillPoints(value)
     }
@@ -137,7 +139,6 @@ impl Sub for SkillPoints {
 pub struct Attribute(i32);
 
 impl Attribute {
-
     pub const fn new(value: i32) -> Attribute {
         Attribute(value)
     }
@@ -150,35 +151,36 @@ impl Attribute {
 #[cfg(test)]
 mod tests {
 
-    use super::*;
-    use crate::test_util;
-
     use kernal::collections::Collection;
     use kernal::collections::ordered::OrderedCollection;
     use kernal::prelude::*;
-
     use rstest::rstest;
+
+    use super::*;
+    use crate::test_util;
 
     impl<'collection, T> Collection<'collection> for QualityLevelMap<T> {
         type Item = T;
-        type Iter<'iter> = Iter<'iter, T>
+        type Iter<'iter>
+            = Iter<'iter, T>
         where
             Self: 'iter,
             'collection: 'iter;
 
         fn iterator<'reference>(&'reference self) -> Self::Iter<'reference>
         where
-            'collection: 'reference
+            'collection: 'reference,
         {
             self.iter()
         }
     }
-    
+
     impl<'collection, T> OrderedCollection<'collection> for QualityLevelMap<T> {}
 
     #[test]
     fn all_quality_levels_correctly_initialized() {
-        let all_quality_levels_as_u8 = QualityLevel::ALL.iter()
+        let all_quality_levels_as_u8 = QualityLevel::ALL
+            .iter()
             .map(|ql| ql.0.get())
             .collect::<Vec<_>>();
 
@@ -239,7 +241,7 @@ mod tests {
     #[case(100, QualityLevel::SIX)]
     fn skill_points_to_quality_level_for_non_negative_skill_points_works(
         #[case] skill_points: i32,
-        #[case] expected_quality_level: QualityLevel
+        #[case] expected_quality_level: QualityLevel,
     ) {
         assert_that!(SkillPoints::new(skill_points).quality_level())
             .contains(expected_quality_level);
@@ -261,7 +263,7 @@ mod tests {
     #[case::multiple([3, 4, -2, 5], 10)]
     fn summing_skill_points_works(
         #[case] skill_points: impl IntoIterator<Item = i32>,
-        #[case] expected_sum: i32
+        #[case] expected_sum: i32,
     ) {
         let sum = skill_points.into_iter().map(SkillPoints::new).sum();
 
@@ -274,7 +276,7 @@ mod tests {
     #[case::attribute_much(25, 1)]
     fn attribute_missing_skill_points_if_greater_or_equal_roll_is_zero(
         #[case] attribute: i32,
-        #[case] roll: u8
+        #[case] roll: u8,
     ) {
         let attribute = Attribute::new(attribute);
         let roll = Roll::new(roll).unwrap();
@@ -289,7 +291,7 @@ mod tests {
     fn attribute_missing_skill_points_if_less_than_roll_is_difference(
         #[case] attribute: i32,
         #[case] roll: u8,
-        #[case] expected_missing_skill_points: i32
+        #[case] expected_missing_skill_points: i32,
     ) {
         let attribute = Attribute::new(attribute);
         let roll = Roll::new(roll).unwrap();

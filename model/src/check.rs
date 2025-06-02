@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::iter;
 use std::ops::{Mul, MulAssign};
+
 use crate::modifier::{Modifier, ModifierAction, ModifierState};
 use crate::probability::Probability;
 use crate::roll::Roll;
@@ -15,7 +16,7 @@ pub enum SkillCheckOutcomeKind {
     Failure,
     Success(QualityLevel),
     CriticalSuccess(QualityLevel),
-    SpectacularSuccess(QualityLevel)
+    SpectacularSuccess(QualityLevel),
 }
 
 /// Contains all information necessary to evaluate the outcome of a skill check. This includes the
@@ -24,41 +25,42 @@ pub enum SkillCheckOutcomeKind {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct SkillCheckOutcome {
     pub kind: SkillCheckOutcomeKind,
-    pub remaining_fate_points: usize
+    pub remaining_fate_points: usize,
 }
 
 impl SkillCheckOutcome {
-
     pub fn quality_level(self) -> Option<QualityLevel> {
         match self.kind {
             SkillCheckOutcomeKind::Success(ql)
             | SkillCheckOutcomeKind::CriticalSuccess(ql)
             | SkillCheckOutcomeKind::SpectacularSuccess(ql) => Some(ql),
-            _ => None
+            _ => None,
         }
     }
 
     pub fn is_critical_failure(self) -> bool {
-        matches!(self.kind,
-            SkillCheckOutcomeKind::CriticalFailure | SkillCheckOutcomeKind::SpectacularFailure)
+        matches!(
+            self.kind,
+            SkillCheckOutcomeKind::CriticalFailure | SkillCheckOutcomeKind::SpectacularFailure
+        )
     }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SkillCheckOutcomeProbabilities {
-    map: HashMap<SkillCheckOutcome, Probability>
+    map: HashMap<SkillCheckOutcome, Probability>,
 }
 
 impl SkillCheckOutcomeProbabilities {
-
     pub fn of_known_outcome(outcome: SkillCheckOutcome) -> SkillCheckOutcomeProbabilities {
         SkillCheckOutcomeProbabilities {
-            map: [(outcome, Probability::ONE)].into()
+            map: [(outcome, Probability::ONE)].into(),
         }
     }
-    
+
     pub fn outcomes(&self) -> impl Iterator<Item = (SkillCheckOutcome, Probability)> + use<'_> {
-        self.map.iter()
+        self.map
+            .iter()
             .map(|(&outcome, &probability)| (outcome, probability))
     }
 
@@ -80,11 +82,11 @@ impl SkillCheckOutcomeProbabilities {
 
 impl<T> From<T> for SkillCheckOutcomeProbabilities
 where
-    T: IntoIterator<Item = (SkillCheckOutcome, Probability)>
+    T: IntoIterator<Item = (SkillCheckOutcome, Probability)>,
 {
     fn from(value: T) -> SkillCheckOutcomeProbabilities {
         SkillCheckOutcomeProbabilities {
-            map: value.into_iter().collect()
+            map: value.into_iter().collect(),
         }
     }
 }
@@ -116,21 +118,23 @@ pub struct SkillCheckState {
 }
 
 impl SkillCheckState {
-
     pub fn legal_actions(&self) -> Vec<SkillCheckAction> {
         let current_outcome = self.current_outcome();
 
-        self.modifiers.available_modifiers()
-            .flat_map(|modifier| modifier.actions(current_outcome).into_iter()
-                .map(move |action| SkillCheckAction::ConsumeModifier { modifier, action }))
+        self.modifiers
+            .available_modifiers()
+            .flat_map(|modifier| {
+                modifier
+                    .actions(current_outcome)
+                    .into_iter()
+                    .map(move |action| SkillCheckAction::ConsumeModifier { modifier, action })
+            })
             .chain(iter::once(SkillCheckAction::Accept))
             .collect()
     }
-    
+
     fn current_outcome_kind(&self) -> SkillCheckOutcomeKind {
-        let max_rolls = self.rolls.iter()
-            .filter(|&&roll| roll == Roll::MAX)
-            .count();
+        let max_rolls = self.rolls.iter().filter(|&&roll| roll == Roll::MAX).count();
 
         if max_rolls == DICE_PER_SKILL_CHECK {
             SkillCheckOutcomeKind::SpectacularFailure
@@ -139,10 +143,11 @@ impl SkillCheckState {
             SkillCheckOutcomeKind::CriticalFailure
         }
         else {
-            let min_rolls = self.rolls.iter()
-                .filter(|&&roll| roll == Roll::MIN)
-                .count();
-            let missing_skill_points = self.attributes.iter().cloned()
+            let min_rolls = self.rolls.iter().filter(|&&roll| roll == Roll::MIN).count();
+            let missing_skill_points = self
+                .attributes
+                .iter()
+                .cloned()
                 .zip(self.rolls.iter().cloned())
                 .map(|(attribute, roll)| attribute.missing_skill_points(roll))
                 .sum();
@@ -162,7 +167,7 @@ impl SkillCheckState {
             }
             else if let Some(quality_level) = quality_level {
                 SkillCheckOutcomeKind::Success(
-                    quality_level.saturating_add_option(self.quality_level_increase)
+                    quality_level.saturating_add_option(self.quality_level_increase),
                 )
             }
             else {
@@ -192,7 +197,7 @@ pub enum SkillCheckAction {
     ConsumeModifier {
         modifier: Modifier,
         action: ModifierAction,
-    }
+    },
 }
 
 impl SkillCheckAction {
@@ -215,12 +220,14 @@ impl SkillCheckAction {
                             quality_level_increase: state.quality_level_increase,
                             modifiers,
                         })
-                    }
+                    },
                     ModifierAction::RerollByAptitude(reroll) => {
                         let fixed_rolls = reroll.apply(state.rolls);
                         let mut roll_caps = [None; DICE_PER_SKILL_CHECK];
 
-                        reroll.pattern().into_iter()
+                        reroll
+                            .pattern()
+                            .into_iter()
                             .zip(state.rolls)
                             .map(|(reroll, roll)| Some(roll).filter(|_| reroll))
                             .enumerate()
@@ -235,16 +242,20 @@ impl SkillCheckAction {
                             modifiers,
                         })
                     },
-                    ModifierAction::IncreaseQualityLevel =>
+                    ModifierAction::IncreaseQualityLevel => {
                         SkillCheckActionResult::State(SkillCheckState {
-                            quality_level_increase: state.quality_level_increase
-                                .map(|old_ql_increase| old_ql_increase.saturating_add(QualityLevel::ONE))
+                            quality_level_increase: state
+                                .quality_level_increase
+                                .map(|old_ql_increase| {
+                                    old_ql_increase.saturating_add(QualityLevel::ONE)
+                                })
                                 .or(Some(QualityLevel::ONE)),
                             modifiers,
                             ..state
                         })
+                    },
                 }
-            }
+            },
         }
     }
 }
@@ -260,7 +271,6 @@ pub struct PartialSkillCheckState {
 }
 
 impl PartialSkillCheckState {
-
     pub fn as_skill_check_state(&self) -> Option<SkillCheckState> {
         let mut rolls = [Roll::MIN; DICE_PER_SKILL_CHECK];
 
@@ -281,14 +291,12 @@ impl PartialSkillCheckState {
 #[cfg(test)]
 mod tests {
 
-    use super::*;
-    use super::SkillCheckOutcomeKind::*;
-
-    use crate::modifier::{Aptitude, Reroll};
-
     use kernal::prelude::*;
-
     use rstest::rstest;
+
+    use super::SkillCheckOutcomeKind::*;
+    use super::*;
+    use crate::modifier::{Aptitude, Reroll};
 
     const fn roll(roll: u8) -> Roll {
         Roll::new(roll).unwrap()
@@ -302,10 +310,7 @@ mod tests {
         quality_level_increase: Option<QualityLevel>,
     }
 
-    fn skill(
-        attributes: [i32; DICE_PER_SKILL_CHECK],
-        skill_value: i32
-    ) -> SkillCheckStateBuilder {
+    fn skill(attributes: [i32; DICE_PER_SKILL_CHECK], skill_value: i32) -> SkillCheckStateBuilder {
         SkillCheckStateBuilder {
             attributes,
             rolls: [1, 1, 1],
@@ -336,13 +341,19 @@ mod tests {
                 attributes: [
                     Attribute::new(self.attributes[0]),
                     Attribute::new(self.attributes[1]),
-                    Attribute::new(self.attributes[2])
+                    Attribute::new(self.attributes[2]),
                 ],
-                rolls: [roll(self.rolls[0]), roll(self.rolls[1]), roll(self.rolls[2])],
+                rolls: [
+                    roll(self.rolls[0]),
+                    roll(self.rolls[1]),
+                    roll(self.rolls[2]),
+                ],
                 skill_value: SkillPoints::new(self.skill_value),
                 quality_level_increase: self.quality_level_increase,
-                modifiers:
-                    ModifierState::from_modifiers(vec![Modifier::FatePoint; self.fate_points])
+                modifiers: ModifierState::from_modifiers(vec![
+                    Modifier::FatePoint;
+                    self.fate_points
+                ]),
             }
         }
     }
@@ -362,7 +373,7 @@ mod tests {
     impl SkillCheckOutcomeBuilder {
         fn remaining_fate_points(
             mut self,
-            remaining_fate_points: usize
+            remaining_fate_points: usize,
         ) -> SkillCheckOutcomeBuilder {
             self.remaining_fate_points = remaining_fate_points;
             self
@@ -450,7 +461,7 @@ mod tests {
     #[case::third_roll_missing([Some(roll(3)), Some(roll(4)), None])]
     #[case::all_rolls_missing([None, None, None])]
     fn incomplete_partial_skill_check_state_as_skill_check_state_is_none(
-        #[case] rolls: [Option<Roll>; DICE_PER_SKILL_CHECK]
+        #[case] rolls: [Option<Roll>; DICE_PER_SKILL_CHECK],
     ) {
         let partial_skill_check_state = PartialSkillCheckState {
             attributes: [Attribute::new(10), Attribute::new(11), Attribute::new(12)],
@@ -463,7 +474,7 @@ mod tests {
 
         assert_that!(partial_skill_check_state.as_skill_check_state()).is_none();
     }
-    
+
     #[test]
     fn complete_partial_skill_check_state_as_skill_check_state_works() {
         let attributes = [Attribute::new(10), Attribute::new(11), Attribute::new(12)];
@@ -493,16 +504,14 @@ mod tests {
             rolls: [roll(8), roll(8), roll(8)],
             skill_value: SkillPoints::new(8),
             quality_level_increase: None,
-            modifiers: ModifierState::default()
+            modifiers: ModifierState::default(),
         }
     }
 
     #[test]
     fn skill_check_legal_actions_without_fate_point_or_aptitude() {
         assert_that!(skill_check_state_success_no_options().legal_actions())
-            .contains_exactly_in_any_order([
-                SkillCheckAction::Accept
-            ]);
+            .contains_exactly_in_any_order([SkillCheckAction::Accept]);
     }
 
     fn use_fate_point(action: ModifierAction) -> SkillCheckAction {
@@ -514,7 +523,7 @@ mod tests {
 
     fn use_aptitude(
         max_dice: usize,
-        reroll_pattern: [bool; DICE_PER_SKILL_CHECK]
+        reroll_pattern: [bool; DICE_PER_SKILL_CHECK],
     ) -> SkillCheckAction {
         SkillCheckAction::ConsumeModifier {
             modifier: Modifier::Aptitude(Aptitude::new(max_dice).unwrap()),
@@ -531,13 +540,27 @@ mod tests {
 
         assert_that!(skill_check_state.legal_actions()).contains_exactly_in_any_order([
             SkillCheckAction::Accept,
-            use_fate_point(ModifierAction::RerollByFate(Reroll::new([false, false, true]).unwrap())),
-            use_fate_point(ModifierAction::RerollByFate(Reroll::new([false, true, false]).unwrap())),
-            use_fate_point(ModifierAction::RerollByFate(Reroll::new([false, true, true]).unwrap())),
-            use_fate_point(ModifierAction::RerollByFate(Reroll::new([true, false, false]).unwrap())),
-            use_fate_point(ModifierAction::RerollByFate(Reroll::new([true, false, true]).unwrap())),
-            use_fate_point(ModifierAction::RerollByFate(Reroll::new([true, true, false]).unwrap())),
-            use_fate_point(ModifierAction::RerollByFate(Reroll::new([true, true, true]).unwrap())),
+            use_fate_point(ModifierAction::RerollByFate(
+                Reroll::new([false, false, true]).unwrap(),
+            )),
+            use_fate_point(ModifierAction::RerollByFate(
+                Reroll::new([false, true, false]).unwrap(),
+            )),
+            use_fate_point(ModifierAction::RerollByFate(
+                Reroll::new([false, true, true]).unwrap(),
+            )),
+            use_fate_point(ModifierAction::RerollByFate(
+                Reroll::new([true, false, false]).unwrap(),
+            )),
+            use_fate_point(ModifierAction::RerollByFate(
+                Reroll::new([true, false, true]).unwrap(),
+            )),
+            use_fate_point(ModifierAction::RerollByFate(
+                Reroll::new([true, true, false]).unwrap(),
+            )),
+            use_fate_point(ModifierAction::RerollByFate(
+                Reroll::new([true, true, true]).unwrap(),
+            )),
             use_fate_point(ModifierAction::IncreaseQualityLevel),
         ]);
     }
@@ -545,8 +568,9 @@ mod tests {
     #[test]
     fn skill_check_legal_actions_with_aptitude() {
         let skill_check_state = SkillCheckState {
-            modifiers:
-                ModifierState::from_modifiers([Modifier::Aptitude(Aptitude::new(1).unwrap())]),
+            modifiers: ModifierState::from_modifiers([Modifier::Aptitude(
+                Aptitude::new(1).unwrap(),
+            )]),
             ..skill_check_state_success_no_options()
         };
 
@@ -561,8 +585,9 @@ mod tests {
     #[test]
     fn skill_check_legal_actions_with_double_aptitude() {
         let skill_check_state = SkillCheckState {
-            modifiers:
-                ModifierState::from_modifiers([Modifier::Aptitude(Aptitude::new(2).unwrap())]),
+            modifiers: ModifierState::from_modifiers([Modifier::Aptitude(
+                Aptitude::new(2).unwrap(),
+            )]),
             ..skill_check_state_success_no_options()
         };
 
@@ -581,18 +606,18 @@ mod tests {
     #[case::critical_failure([roll(20), roll(3), roll(20)])]
     #[case::spectacular_failure([roll(20), roll(20), roll(20)])]
     fn skill_check_legal_actions_with_aptitude_critical_failure(
-        #[case] rolls: [Roll; DICE_PER_SKILL_CHECK]
+        #[case] rolls: [Roll; DICE_PER_SKILL_CHECK],
     ) {
         let skill_check_state = SkillCheckState {
             rolls,
-            modifiers:
-                ModifierState::from_modifiers([Modifier::Aptitude(Aptitude::new(1).unwrap())]),
+            modifiers: ModifierState::from_modifiers([Modifier::Aptitude(
+                Aptitude::new(1).unwrap(),
+            )]),
             ..skill_check_state_success_no_options()
         };
 
-        assert_that!(skill_check_state.legal_actions()).contains_exactly_in_any_order([
-            SkillCheckAction::Accept
-        ]);
+        assert_that!(skill_check_state.legal_actions())
+            .contains_exactly_in_any_order([SkillCheckAction::Accept]);
     }
 
     #[rstest]
@@ -613,13 +638,27 @@ mod tests {
 
         assert_that!(skill_check_state.legal_actions()).contains_exactly_in_any_order([
             SkillCheckAction::Accept,
-            use_fate_point(ModifierAction::RerollByFate(Reroll::new([false, false, true]).unwrap())),
-            use_fate_point(ModifierAction::RerollByFate(Reroll::new([false, true, false]).unwrap())),
-            use_fate_point(ModifierAction::RerollByFate(Reroll::new([false, true, true]).unwrap())),
-            use_fate_point(ModifierAction::RerollByFate(Reroll::new([true, false, false]).unwrap())),
-            use_fate_point(ModifierAction::RerollByFate(Reroll::new([true, false, true]).unwrap())),
-            use_fate_point(ModifierAction::RerollByFate(Reroll::new([true, true, false]).unwrap())),
-            use_fate_point(ModifierAction::RerollByFate(Reroll::new([true, true, true]).unwrap())),
+            use_fate_point(ModifierAction::RerollByFate(
+                Reroll::new([false, false, true]).unwrap(),
+            )),
+            use_fate_point(ModifierAction::RerollByFate(
+                Reroll::new([false, true, false]).unwrap(),
+            )),
+            use_fate_point(ModifierAction::RerollByFate(
+                Reroll::new([false, true, true]).unwrap(),
+            )),
+            use_fate_point(ModifierAction::RerollByFate(
+                Reroll::new([true, false, false]).unwrap(),
+            )),
+            use_fate_point(ModifierAction::RerollByFate(
+                Reroll::new([true, false, true]).unwrap(),
+            )),
+            use_fate_point(ModifierAction::RerollByFate(
+                Reroll::new([true, true, false]).unwrap(),
+            )),
+            use_fate_point(ModifierAction::RerollByFate(
+                Reroll::new([true, true, true]).unwrap(),
+            )),
         ]);
     }
 
@@ -627,7 +666,7 @@ mod tests {
     #[case::critical_failure([roll(20), roll(3), roll(20)])]
     #[case::spectacular_failure([roll(20), roll(20), roll(20)])]
     fn skill_check_legal_actions_with_fate_point_critical_failure(
-        #[case] rolls: [Roll; DICE_PER_SKILL_CHECK]
+        #[case] rolls: [Roll; DICE_PER_SKILL_CHECK],
     ) {
         let skill_check_state = SkillCheckState {
             rolls,
@@ -635,9 +674,8 @@ mod tests {
             ..skill_check_state_success_no_options()
         };
 
-        assert_that!(skill_check_state.legal_actions()).contains_exactly_in_any_order([
-            SkillCheckAction::Accept
-        ]);
+        assert_that!(skill_check_state.legal_actions())
+            .contains_exactly_in_any_order([SkillCheckAction::Accept]);
     }
 
     #[rstest]
@@ -650,7 +688,7 @@ mod tests {
     #[case([true, true, true], [None, None, None])]
     fn reroll_fate_apply(
         #[case] reroll_pattern: [bool; DICE_PER_SKILL_CHECK],
-        #[case] expected_rolls: [Option<Roll>; DICE_PER_SKILL_CHECK]
+        #[case] expected_rolls: [Option<Roll>; DICE_PER_SKILL_CHECK],
     ) {
         let aptitude_1 = Modifier::Aptitude(Aptitude::new(1).unwrap());
         let skill_check_state = SkillCheckState {
@@ -707,7 +745,7 @@ mod tests {
     fn reroll_aptitude_apply(
         #[case] reroll_pattern: [bool; DICE_PER_SKILL_CHECK],
         #[case] expected_rolls: [Option<Roll>; DICE_PER_SKILL_CHECK],
-        #[case] expected_roll_caps: [Option<Roll>; DICE_PER_SKILL_CHECK]
+        #[case] expected_roll_caps: [Option<Roll>; DICE_PER_SKILL_CHECK],
     ) {
         let aptitude_2 = Modifier::Aptitude(Aptitude::new(2).unwrap());
         let skill_check_state = SkillCheckState {
@@ -719,7 +757,7 @@ mod tests {
         };
         let action = SkillCheckAction::ConsumeModifier {
             modifier: aptitude_2,
-            action: ModifierAction::RerollByAptitude(Reroll::new(reroll_pattern).unwrap())
+            action: ModifierAction::RerollByAptitude(Reroll::new(reroll_pattern).unwrap()),
         };
 
         let result = action.apply(skill_check_state);
@@ -743,7 +781,7 @@ mod tests {
             skill_value: SkillPoints::new(6),
             modifiers: ModifierState::from_modifiers([
                 Modifier::FatePoint,
-                Modifier::Aptitude(Aptitude::new(1).unwrap())
+                Modifier::Aptitude(Aptitude::new(1).unwrap()),
             ]),
             quality_level_increase: None,
         };
@@ -769,7 +807,7 @@ mod tests {
     #[case::with_max_ql_increase(Some(QL_SIX), QL_SIX)]
     fn increase_quality_level_apply(
         #[case] old_quality_level_increase: Option<QualityLevel>,
-        #[case] expected_quality_level_increase: QualityLevel
+        #[case] expected_quality_level_increase: QualityLevel,
     ) {
         let skill_check_state = SkillCheckState {
             attributes: [Attribute::new(10), Attribute::new(11), Attribute::new(12)],
@@ -821,9 +859,8 @@ mod tests {
 
     #[test]
     fn skill_check_outcome_probabilities_mul_works_for_non_empty_map() {
-        let skill_check_probabilities = SkillCheckOutcomeProbabilities::from(
-            [(OUTCOME_1, prob(0.2)), (OUTCOME_2, prob(0.4))]
-        );
+        let skill_check_probabilities =
+            SkillCheckOutcomeProbabilities::from([(OUTCOME_1, prob(0.2)), (OUTCOME_2, prob(0.4))]);
 
         let actual = skill_check_probabilities * prob(0.5);
         let epsilon = 0.001;
@@ -855,7 +892,7 @@ mod tests {
     fn skill_check_outcome_probabilities_saturating_add_works(
         #[case] lhs: impl IntoIterator<Item = (SkillCheckOutcome, Probability)>,
         #[case] rhs: impl IntoIterator<Item = (SkillCheckOutcome, Probability)>,
-        #[case] expected: impl IntoIterator<Item = (SkillCheckOutcome, Probability)>
+        #[case] expected: impl IntoIterator<Item = (SkillCheckOutcome, Probability)>,
     ) {
         let mut lhs = SkillCheckOutcomeProbabilities::from(lhs);
         let rhs = SkillCheckOutcomeProbabilities::from(rhs);

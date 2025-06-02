@@ -1,8 +1,8 @@
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::num::NonZeroUsize;
 
-use crate::check::{SkillCheckOutcome, DICE_PER_SKILL_CHECK};
+use crate::check::{DICE_PER_SKILL_CHECK, SkillCheckOutcome};
 use crate::roll::Roll;
 use crate::skill::QualityLevel;
 
@@ -10,7 +10,6 @@ use crate::skill::QualityLevel;
 pub struct Reroll([bool; DICE_PER_SKILL_CHECK]);
 
 impl Reroll {
-
     pub const ALL_OPTIONS: [Reroll; 7] = [
         Reroll([false, false, true]),
         Reroll([false, true, false]),
@@ -18,7 +17,7 @@ impl Reroll {
         Reroll([true, false, false]),
         Reroll([true, false, true]),
         Reroll([true, true, false]),
-        Reroll([true, true, true])
+        Reroll([true, true, true]),
     ];
 
     pub fn new(reroll_pattern: [bool; DICE_PER_SKILL_CHECK]) -> Option<Reroll> {
@@ -40,11 +39,14 @@ impl Reroll {
 
     pub fn apply(
         self,
-        rolls: [Roll; DICE_PER_SKILL_CHECK]
+        rolls: [Roll; DICE_PER_SKILL_CHECK],
     ) -> [Option<Roll>; DICE_PER_SKILL_CHECK] {
         let mut fixed_rolls = [None; DICE_PER_SKILL_CHECK];
 
-        self.0.iter().cloned().enumerate()
+        self.0
+            .iter()
+            .cloned()
+            .enumerate()
             .zip(rolls.iter().cloned())
             .for_each(|((index, reroll), roll)| {
                 if !reroll {
@@ -58,7 +60,7 @@ impl Reroll {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Aptitude {
-    max_dice: NonZeroUsize
+    max_dice: NonZeroUsize,
 }
 
 impl Aptitude {
@@ -69,7 +71,8 @@ impl Aptitude {
     }
 
     pub fn legal_rerolls(self) -> impl Iterator<Item = Reroll> {
-        Reroll::ALL_OPTIONS.into_iter()
+        Reroll::ALL_OPTIONS
+            .into_iter()
             .filter(move |reroll| reroll.num_dice() <= self.max_dice.get())
     }
 }
@@ -79,7 +82,7 @@ impl Aptitude {
 pub enum ModifierAction {
     RerollByFate(Reroll),
     RerollByAptitude(Reroll),
-    IncreaseQualityLevel
+    IncreaseQualityLevel,
 }
 
 /// Modifiers define the actions the player can take during a skill check. Each modifier can enable
@@ -88,7 +91,7 @@ pub enum ModifierAction {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Modifier {
     FatePoint,
-    Aptitude(Aptitude)
+    Aptitude(Aptitude),
 }
 
 impl Modifier {
@@ -99,7 +102,8 @@ impl Modifier {
 
         match self {
             Modifier::FatePoint => {
-                let mut legal_actions = Reroll::ALL_OPTIONS.into_iter()
+                let mut legal_actions = Reroll::ALL_OPTIONS
+                    .into_iter()
                     .map(ModifierAction::RerollByFate)
                     .collect::<Vec<_>>();
 
@@ -111,23 +115,25 @@ impl Modifier {
 
                 legal_actions
             },
-            Modifier::Aptitude(aptitude) => {
-                aptitude.legal_rerolls().map(ModifierAction::RerollByAptitude).collect()
-            },
+            Modifier::Aptitude(aptitude) => aptitude
+                .legal_rerolls()
+                .map(ModifierAction::RerollByAptitude)
+                .collect(),
         }
     }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ModifierState {
-    available_modifiers: HashMap<Modifier, NonZeroUsize>
+    available_modifiers: HashMap<Modifier, NonZeroUsize>,
 }
 
 impl ModifierState {
-
     pub fn from_modifiers(modifiers: impl IntoIterator<Item = Modifier>) -> ModifierState {
         let mut result = ModifierState::default();
-        modifiers.into_iter().for_each(|modifier| result.add(modifier));
+        modifiers
+            .into_iter()
+            .for_each(|modifier| result.add(modifier));
         result
     }
 
@@ -136,7 +142,11 @@ impl ModifierState {
     }
 
     pub fn count_of(&self, modifier: Modifier) -> usize {
-        self.available_modifiers.get(&modifier).cloned().map(NonZeroUsize::get).unwrap_or(0)
+        self.available_modifiers
+            .get(&modifier)
+            .cloned()
+            .map(NonZeroUsize::get)
+            .unwrap_or(0)
     }
 
     pub fn add(&mut self, modifier: Modifier) {
@@ -148,7 +158,7 @@ impl ModifierState {
             },
             Entry::Vacant(entry) => {
                 entry.insert(NonZeroUsize::new(1).unwrap());
-            }
+            },
         }
     }
 
@@ -172,11 +182,10 @@ impl ModifierState {
 #[cfg(test)]
 mod tests {
 
-    use super::*;
-
     use kernal::prelude::*;
-
     use rstest::rstest;
+
+    use super::*;
 
     #[rstest]
     #[case([false, false, true])]
@@ -222,8 +231,7 @@ mod tests {
             Modifier::FatePoint,
         ]);
 
-        assert_that!(state.count_of(Modifier::Aptitude(Aptitude::new(2).unwrap())))
-            .is_equal_to(0);
+        assert_that!(state.count_of(Modifier::Aptitude(Aptitude::new(2).unwrap()))).is_equal_to(0);
     }
 
     #[test]
