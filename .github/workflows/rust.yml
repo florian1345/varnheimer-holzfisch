@@ -18,13 +18,17 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - name: Clippy
-      run: |
-        rustup component add clippy
-        cargo clippy --verbose --all-features
     - name: Build
       run: cargo build --verbose --all-features
     - name: Tests
       run: cargo test --verbose --all-features
+    - name: Clippy
+      run: |
+        rustup component add clippy
+        cargo clippy --verbose --all-features
+    - name: Rustfmt
+      run: |
+        rustup component add rustfmt
+        cargo fmt --all -- --check
     - name: Documentation
       run: cargo doc --verbose --all-features
