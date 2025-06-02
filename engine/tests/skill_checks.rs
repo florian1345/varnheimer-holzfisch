@@ -3,9 +3,7 @@ use std::collections::HashMap;
 use engine::VarnheimerHolzfischEngine;
 
 use model::check::{
-    Aptitude,
     PartialSkillCheckState,
-    Reroll,
     SkillCheckAction,
     SkillCheckOutcome,
     SkillCheckOutcomeKind,
@@ -15,11 +13,12 @@ use model::check::{
 use model::engine::SkillCheckEngine;
 use model::evaluation::{Evaluation, SkillCheckEvaluator};
 use model::skill::{Attribute, QualityLevel, SkillPoints};
+use model::modifier::{Aptitude, Modifier, ModifierAction, ModifierState, Reroll};
+use model::probability::Probability;
+use model::roll::Roll;
 
 use kernal::prelude::*;
 use rstest::rstest;
-use model::probability::Probability;
-use model::roll::Roll;
 
 struct PerOutcomeEvaluator {
     outcomes: HashMap<SkillCheckOutcome, Evaluation>
@@ -111,9 +110,8 @@ fn simple_call_with_zero_skill_points() {
         roll_caps: [None, None, None],
         fixed_rolls: [None, None, None],
         skill_value: SkillPoints::new(0),
-        fate_points: 0,
-        aptitude: None,
         quality_level_increase: None,
+        modifiers: ModifierState::default(),
     });
 
     let success_probability = prob((1000.0 - 28.0) / 8000.0);
@@ -142,9 +140,8 @@ fn given_roll_with_fate_point_evaluates_options_correctly() {
         attributes: [Attribute::new(12), Attribute::new(11), Attribute::new(10)],
         rolls: [Roll::new(16).unwrap(), Roll::new(4).unwrap(), Roll::new(10).unwrap()],
         skill_value: SkillPoints::new(7),
-        fate_points: 1,
-        aptitude: None,
         quality_level_increase: None,
+        modifiers: ModifierState::from_modifiers([Modifier::FatePoint]),
     };
 
     let mut engine = VarnheimerHolzfischEngine {
@@ -166,10 +163,15 @@ fn given_roll_with_fate_point_evaluates_options_correctly() {
     let second_best_move = evaluated[1].clone();
 
     assert_that!(evaluated).has_length(9); // accept + increase QL + 7 reroll combos
-    assert_that!(best_move.0)
-        .is_equal_to(SkillCheckAction::RerollByFate(Reroll::new([true, false, false]).unwrap()));
+    assert_that!(best_move.0).is_equal_to(SkillCheckAction::ConsumeModifier {
+        modifier: Modifier::FatePoint,
+        action: ModifierAction::RerollByFate(Reroll::new([true, false, false]).unwrap())
+    });
     assert_that!(best_move.1.evaluation).is_close_to(eval(2.3), EPS);
-    assert_that!(second_best_move.0).is_equal_to(SkillCheckAction::IncreaseQualityLevel);
+    assert_that!(second_best_move.0).is_equal_to(SkillCheckAction::ConsumeModifier {
+        modifier: Modifier::FatePoint,
+        action: ModifierAction::IncreaseQualityLevel
+    });
     assert_that!(second_best_move.1.evaluation).is_close_to(eval(2.0), EPS);
 }
 
@@ -179,9 +181,8 @@ fn given_roll_with_fate_point_evaluates_cost_of_fate_point_correctly() {
         attributes: [Attribute::new(9), Attribute::new(13), Attribute::new(11)],
         rolls: [Roll::new(13).unwrap(), Roll::new(10).unwrap(), Roll::new(12).unwrap()],
         skill_value: SkillPoints::new(8),
-        fate_points: 1,
-        aptitude: None,
         quality_level_increase: None,
+        modifiers: ModifierState::from_modifiers([Modifier::FatePoint]),
     };
 
     let mut engine = VarnheimerHolzfischEngine {
@@ -206,30 +207,30 @@ fn given_roll_with_fate_point_evaluates_cost_of_fate_point_correctly() {
 #[rstest]
 #[case::max_success_probability(
     [(QualityLevel::ONE, eval(1.0)), (QualityLevel::TWO, eval(1.0))],
-    SkillCheckAction::RerollByAptitude(Reroll::new([true, false, false]).unwrap()),
+    ModifierAction::RerollByAptitude(Reroll::new([true, false, false]).unwrap()),
     eval(0.75)
 )]
 #[case::max_average_ql(
     [(QualityLevel::ONE, eval(1.0)), (QualityLevel::TWO, eval(2.0))],
-    SkillCheckAction::RerollByAptitude(Reroll::new([false, false, true]).unwrap()),
+    ModifierAction::RerollByAptitude(Reroll::new([false, false, true]).unwrap()),
     eval(1.1)
 )]
 fn given_roll_with_aptitude_evaluates_options_correctly(
     #[case] eval_by_ql: impl IntoIterator<Item = (QualityLevel, Evaluation)>,
-    #[case] expected_best_action: SkillCheckAction,
+    #[case] expected_best_action: ModifierAction,
     #[case] expected_evaluation: Evaluation,
 ) {
     // There are only 2 reasonable options: reroll 16 or 14. Which is better depends on evaluator:
     // - 16 gives 75% chance of success, but only at QL 1
     // - 14 gives 65% chance of success, but 45% chance of QL 2
 
+    let aptitude_1 = Modifier::Aptitude(Aptitude::new(1).unwrap());
     let skill_check_state = SkillCheckState {
         attributes: [Attribute::new(15), Attribute::new(14), Attribute::new(9)],
         rolls: [Roll::new(16).unwrap(), Roll::new(4).unwrap(), Roll::new(14).unwrap()],
         skill_value: SkillPoints::new(5),
-        fate_points: 0,
-        aptitude: Some(Aptitude::new(1).unwrap()),
         quality_level_increase: None,
+        modifiers: ModifierState::from_modifiers([aptitude_1]),
     };
 
     let mut engine = VarnheimerHolzfischEngine {
@@ -244,7 +245,10 @@ fn given_roll_with_aptitude_evaluates_options_correctly(
     let best_move = evaluated[0].clone();
 
     assert_that!(evaluated).has_length(4); // accept + reroll each die
-    assert_that!(best_move.0).is_equal_to(expected_best_action);
+    assert_that!(best_move.0).is_equal_to(SkillCheckAction::ConsumeModifier {
+        modifier: aptitude_1,
+        action: expected_best_action
+    });
     assert_that!(best_move.1.evaluation).is_close_to(expected_evaluation, EPS);
 }
 
@@ -254,13 +258,13 @@ fn given_roll_with_aptitude_evaluates_reroll_with_cap_correctly() {
     // check, since aptitude cannot make the result worse, it is worth rerolling.
     // Result: 35 % QL 3, 65 % QL 2 => value 2.35
 
+    let aptitude_1 = Modifier::Aptitude(Aptitude::new(1).unwrap());
     let skill_check_state = SkillCheckState {
         attributes: [Attribute::new(9), Attribute::new(7), Attribute::new(9)],
         rolls: [Roll::new(3).unwrap(), Roll::new(8).unwrap(), Roll::new(5).unwrap()],
         skill_value: SkillPoints::new(7),
-        fate_points: 0,
-        aptitude: Some(Aptitude::new(1).unwrap()),
         quality_level_increase: None,
+        modifiers: ModifierState::from_modifiers([aptitude_1]),
     };
 
     let mut engine = VarnheimerHolzfischEngine {
@@ -273,7 +277,10 @@ fn given_roll_with_aptitude_evaluates_reroll_with_cap_correctly() {
 
     assert_that!(evaluated).has_length(4); // accept + reroll each die
     assert_that!(best_move.0).is_equal_to(
-        SkillCheckAction::RerollByAptitude(Reroll::new([false, true, false]).unwrap())
+        SkillCheckAction::ConsumeModifier {
+            modifier: aptitude_1,
+            action: ModifierAction::RerollByAptitude(Reroll::new([false, true, false]).unwrap())
+        }
     );
     assert_that!(best_move.1.evaluation).is_close_to(eval(2.35), EPS);
 }

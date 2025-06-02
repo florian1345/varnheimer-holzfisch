@@ -59,8 +59,9 @@ impl<EvaluatorT: SkillCheckEvaluator> SkillCheckEngine for VarnheimerHolzfischEn
                 .filter(|&roll| roll >= cap)
                 .count();
             let probability = DIE_RESULT_PROBABILITY.saturating_mul(rolls_at_least_cap);
-            state.fixed_rolls[first_unrolled_idx] = Some(cap);
-            let sub_evaluated = self.evaluate_partial(state);
+            let mut child_state = state.clone();
+            child_state.fixed_rolls[first_unrolled_idx] = Some(cap);
+            let sub_evaluated = self.evaluate_partial(child_state);
             probabilities.saturating_add_assign(&(sub_evaluated.evaluated.clone() * probability));
             evaluation += sub_evaluated.evaluation * probability;
 
@@ -72,8 +73,9 @@ impl<EvaluatorT: SkillCheckEvaluator> SkillCheckEngine for VarnheimerHolzfischEn
         };
 
         for &roll in rolls_to_analyze {
-            state.fixed_rolls[first_unrolled_idx] = Some(roll);
-            let sub_evaluated = self.evaluate_partial(state);
+            let mut child_state = state.clone();
+            child_state.fixed_rolls[first_unrolled_idx] = Some(roll);
+            let sub_evaluated = self.evaluate_partial(child_state);
             probabilities.saturating_add_assign(
                 &(sub_evaluated.evaluated.clone() * DIE_RESULT_PROBABILITY));
             evaluation += sub_evaluated.evaluation * DIE_RESULT_PROBABILITY;

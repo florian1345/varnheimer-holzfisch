@@ -17,7 +17,7 @@ pub trait SkillCheckEngine {
     fn evaluate_all_actions(&mut self, skill_check: SkillCheckState)
             -> Vec<(SkillCheckAction, Evaluated<SkillCheckOutcomeProbabilities>)> {
         let mut result = skill_check.legal_actions().into_iter()
-            .map(|action| (action, self.evaluate_action(skill_check, action)))
+            .map(|action| (action, self.evaluate_action(skill_check.clone(), action)))
             .collect::<Vec<_>>();
 
         result.sort_by_key(|(_, evaluated)| -evaluated.evaluation);
