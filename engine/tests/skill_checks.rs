@@ -113,7 +113,8 @@ fn simple_call_with_zero_skill_points() {
         roll_caps: [None, None, None],
         fixed_rolls: [None, None, None],
         skill_value: SkillPoints::new(0),
-        quality_level_increase: None,
+        extra_quality_levels_on_success: None,
+        extra_skill_points_on_success: SkillPoints::new(0),
         modifiers: ModifierState::default(),
     });
 
@@ -155,7 +156,8 @@ fn given_roll_with_fate_point_evaluates_options_correctly() {
             Roll::new(10).unwrap(),
         ],
         skill_value: SkillPoints::new(7),
-        quality_level_increase: None,
+        extra_quality_levels_on_success: None,
+        extra_skill_points_on_success: SkillPoints::new(0),
         modifiers: ModifierState::from_modifiers([Modifier::FatePoint]),
     };
 
@@ -200,7 +202,8 @@ fn given_roll_with_fate_point_evaluates_cost_of_fate_point_correctly() {
             Roll::new(12).unwrap(),
         ],
         skill_value: SkillPoints::new(8),
-        quality_level_increase: None,
+        extra_quality_levels_on_success: None,
+        extra_skill_points_on_success: SkillPoints::new(0),
         modifiers: ModifierState::from_modifiers([Modifier::FatePoint]),
     };
 
@@ -252,7 +255,8 @@ fn given_roll_with_aptitude_evaluates_options_correctly(
             Roll::new(14).unwrap(),
         ],
         skill_value: SkillPoints::new(5),
-        quality_level_increase: None,
+        extra_quality_levels_on_success: None,
+        extra_skill_points_on_success: SkillPoints::new(0),
         modifiers: ModifierState::from_modifiers([aptitude_1]),
     };
 
@@ -290,7 +294,8 @@ fn given_roll_with_aptitude_evaluates_reroll_with_cap_correctly() {
             Roll::new(5).unwrap(),
         ],
         skill_value: SkillPoints::new(7),
-        quality_level_increase: None,
+        extra_quality_levels_on_success: None,
+        extra_skill_points_on_success: SkillPoints::new(0),
         modifiers: ModifierState::from_modifiers([aptitude_1]),
     };
 

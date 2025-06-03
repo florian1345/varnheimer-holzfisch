@@ -79,7 +79,7 @@ impl<T> IndexMut<QualityLevel> for QualityLevelMap<T> {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SkillPoints(i32);
 
 impl SkillPoints {
@@ -87,8 +87,12 @@ impl SkillPoints {
         SkillPoints(value)
     }
 
+    pub fn is_negative(self) -> bool {
+        self.0 < 0
+    }
+
     pub fn quality_level(self) -> Option<QualityLevel> {
-        if self.0 < 0 {
+        if self.is_negative() {
             None
         }
         else {

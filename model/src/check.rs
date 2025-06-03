@@ -113,7 +113,8 @@ pub struct SkillCheckState {
     pub attributes: [Attribute; DICE_PER_SKILL_CHECK],
     pub rolls: [Roll; DICE_PER_SKILL_CHECK],
     pub skill_value: SkillPoints,
-    pub quality_level_increase: Option<QualityLevel>,
+    pub extra_quality_levels_on_success: Option<QualityLevel>,
+    pub extra_skill_points_on_success: SkillPoints,
     pub modifiers: ModifierState,
 }
 
@@ -151,12 +152,18 @@ impl SkillCheckState {
                 .zip(self.rolls.iter().cloned())
                 .map(|(attribute, roll)| attribute.missing_skill_points(roll))
                 .sum();
-            let quality_level = (self.skill_value - missing_skill_points).quality_level();
+            let mut remaining_skill_points = self.skill_value - missing_skill_points;
+
+            if !remaining_skill_points.is_negative() {
+                remaining_skill_points += self.extra_skill_points_on_success;
+            }
+
+            let quality_level = remaining_skill_points.quality_level();
 
             if min_rolls >= DICE_PER_SKILL_CHECK - 1 {
                 let quality_level = quality_level
                     .unwrap_or(QualityLevel::ONE)
-                    .saturating_add_option(self.quality_level_increase);
+                    .saturating_add_option(self.extra_quality_levels_on_success);
 
                 if min_rolls == DICE_PER_SKILL_CHECK {
                     SkillCheckOutcomeKind::SpectacularSuccess(quality_level)
@@ -167,7 +174,7 @@ impl SkillCheckState {
             }
             else if let Some(quality_level) = quality_level {
                 SkillCheckOutcomeKind::Success(
-                    quality_level.saturating_add_option(self.quality_level_increase),
+                    quality_level.saturating_add_option(self.extra_quality_levels_on_success),
                 )
             }
             else {
@@ -217,7 +224,8 @@ impl SkillCheckAction {
                             roll_caps: [None; DICE_PER_SKILL_CHECK],
                             fixed_rolls,
                             skill_value: state.skill_value,
-                            quality_level_increase: state.quality_level_increase,
+                            extra_quality_levels_on_success: state.extra_quality_levels_on_success,
+                            extra_skill_points_on_success: state.extra_skill_points_on_success,
                             modifiers,
                         })
                     },
@@ -238,14 +246,15 @@ impl SkillCheckAction {
                             roll_caps,
                             fixed_rolls,
                             skill_value: state.skill_value,
-                            quality_level_increase: state.quality_level_increase,
+                            extra_quality_levels_on_success: state.extra_quality_levels_on_success,
+                            extra_skill_points_on_success: state.extra_skill_points_on_success,
                             modifiers,
                         })
                     },
                     ModifierAction::IncreaseQualityLevel => {
                         SkillCheckActionResult::State(SkillCheckState {
-                            quality_level_increase: state
-                                .quality_level_increase
+                            extra_quality_levels_on_success: state
+                                .extra_quality_levels_on_success
                                 .map(|old_ql_increase| {
                                     old_ql_increase.saturating_add(QualityLevel::ONE)
                                 })
@@ -266,7 +275,8 @@ pub struct PartialSkillCheckState {
     pub roll_caps: [Option<Roll>; DICE_PER_SKILL_CHECK],
     pub fixed_rolls: [Option<Roll>; DICE_PER_SKILL_CHECK],
     pub skill_value: SkillPoints,
-    pub quality_level_increase: Option<QualityLevel>,
+    pub extra_quality_levels_on_success: Option<QualityLevel>,
+    pub extra_skill_points_on_success: SkillPoints,
     pub modifiers: ModifierState,
 }
 
@@ -282,7 +292,8 @@ impl PartialSkillCheckState {
             attributes: self.attributes,
             rolls,
             skill_value: self.skill_value,
-            quality_level_increase: self.quality_level_increase,
+            extra_quality_levels_on_success: self.extra_quality_levels_on_success,
+            extra_skill_points_on_success: self.extra_skill_points_on_success,
             modifiers: self.modifiers.clone(),
         })
     }
@@ -307,7 +318,8 @@ mod tests {
         rolls: [u8; DICE_PER_SKILL_CHECK],
         skill_value: i32,
         fate_points: usize,
-        quality_level_increase: Option<QualityLevel>,
+        extra_quality_levels_on_success: Option<QualityLevel>,
+        extra_skill_points_on_success: i32,
     }
 
     fn skill(attributes: [i32; DICE_PER_SKILL_CHECK], skill_value: i32) -> SkillCheckStateBuilder {
@@ -316,7 +328,8 @@ mod tests {
             rolls: [1, 1, 1],
             skill_value,
             fate_points: 0,
-            quality_level_increase: None,
+            extra_quality_levels_on_success: None,
+            extra_skill_points_on_success: 0,
         }
     }
 
@@ -326,8 +339,16 @@ mod tests {
             self
         }
 
-        fn quality_level_increase(mut self, quality_level_increase: QualityLevel) -> Self {
-            self.quality_level_increase = Some(quality_level_increase);
+        fn extra_quality_levels_on_success(
+            mut self,
+            extra_quality_levels_on_success: QualityLevel,
+        ) -> Self {
+            self.extra_quality_levels_on_success = Some(extra_quality_levels_on_success);
+            self
+        }
+
+        fn extra_skill_points_on_success(mut self, extra_skill_points_on_success: i32) -> Self {
+            self.extra_skill_points_on_success = extra_skill_points_on_success;
             self
         }
 
@@ -349,7 +370,8 @@ mod tests {
                     roll(self.rolls[2]),
                 ],
                 skill_value: SkillPoints::new(self.skill_value),
-                quality_level_increase: self.quality_level_increase,
+                extra_quality_levels_on_success: self.extra_quality_levels_on_success,
+                extra_skill_points_on_success: SkillPoints::new(self.extra_skill_points_on_success),
                 modifiers: ModifierState::from_modifiers(vec![
                     Modifier::FatePoint;
                     self.fate_points
@@ -418,28 +440,56 @@ mod tests {
     #[case(skill([1, 1, 1], 0).roll([1, 1, 1]), has_outcome(SpectacularSuccess(QL_ONE)))]
     #[case(skill([11, 12, 13], 10).roll([1, 1, 1]), has_outcome(SpectacularSuccess(QL_FOUR)))]
     #[case::ql_increase_spectacular_failure(
-        skill([10, 10, 10], 5).roll([20, 20, 20]).quality_level_increase(QL_ONE),
+        skill([10, 10, 10], 5).roll([20, 20, 20]).extra_quality_levels_on_success(QL_ONE),
         has_outcome(SpectacularFailure)
     )]
     #[case::ql_increase_critical_failure(
-        skill([10, 10, 10], 5).roll([20, 10, 20]).quality_level_increase(QL_TWO),
+        skill([10, 10, 10], 5).roll([20, 10, 20]).extra_quality_levels_on_success(QL_TWO),
         has_outcome(CriticalFailure)
     )]
     #[case::ql_increase_failure(
-        skill([10, 10, 10], 5).roll([12, 12, 12]).quality_level_increase(QL_THREE),
+        skill([10, 10, 10], 5).roll([12, 12, 12]).extra_quality_levels_on_success(QL_THREE),
         has_outcome(Failure)
     )]
     #[case::ql_increase_success(
-        skill([10, 11, 12], 8).roll([14, 5, 12]).quality_level_increase(QL_ONE),
+        skill([10, 11, 12], 8).roll([14, 5, 12]).extra_quality_levels_on_success(QL_ONE),
         has_outcome(Success(QL_THREE))
     )]
     #[case::ql_increase_critical_success_capped(
-        skill([10, 11, 12], 11).roll([1, 1, 2]).quality_level_increase(QL_THREE),
+        skill([10, 11, 12], 11).roll([1, 1, 2]).extra_quality_levels_on_success(QL_THREE),
         has_outcome(CriticalSuccess(QL_SIX))
     )]
     #[case::ql_increase_spectacular_success_capped(
-        skill([10, 11, 12], 11).roll([1, 1, 1]).quality_level_increase(QL_ONE),
+        skill([10, 11, 12], 11).roll([1, 1, 1]).extra_quality_levels_on_success(QL_ONE),
         has_outcome(SpectacularSuccess(QL_FIVE))
+    )]
+    #[case::extra_skill_points_on_success_not_applied_to_spectacular_failure(
+        skill([15, 15, 15], 14).roll([20, 20, 20]).extra_skill_points_on_success(1),
+        has_outcome(SpectacularFailure)
+    )]
+    #[case::extra_skill_points_on_success_not_applied_to_critical_failure(
+        skill([15, 15, 15], 9).roll([20, 20, 4]).extra_skill_points_on_success(1),
+        has_outcome(CriticalFailure)
+    )]
+    #[case::extra_skill_points_on_success_not_applied_to_failure(
+        skill([15, 15, 15], 4).roll([20, 10, 4]).extra_skill_points_on_success(1),
+        has_outcome(Failure)
+    )]
+    #[case::extra_skill_points_on_success_without_changing_quality(
+        skill([13, 14, 15], 5).roll([15, 15, 4]).extra_skill_points_on_success(1),
+        has_outcome(Success(QL_ONE))
+    )]
+    #[case::extra_skill_points_on_success_changing_quality(
+        skill([13, 14, 15], 5).roll([15, 15, 4]).extra_skill_points_on_success(2),
+        has_outcome(Success(QL_TWO))
+    )]
+    #[case::extra_skill_points_on_success_critical_success(
+        skill([13, 14, 15], 6).roll([1, 2, 1]).extra_skill_points_on_success(1),
+        has_outcome(CriticalSuccess(QL_THREE))
+    )]
+    #[case::extra_skill_points_on_success_spectacular_success(
+        skill([13, 14, 15], 6).roll([1, 1, 1]).extra_skill_points_on_success(4),
+        has_outcome(SpectacularSuccess(QL_FOUR))
     )]
     #[case::remaining_fate_points(
         skill([10, 10, 10], 10).roll([10, 10, 10]).fate_points(3),
@@ -468,7 +518,8 @@ mod tests {
             roll_caps: [None; DICE_PER_SKILL_CHECK],
             fixed_rolls: rolls,
             skill_value: SkillPoints::new(12),
-            quality_level_increase: None,
+            extra_quality_levels_on_success: None,
+            extra_skill_points_on_success: SkillPoints::new(0),
             modifiers: ModifierState::default(),
         };
 
@@ -480,12 +531,15 @@ mod tests {
         let attributes = [Attribute::new(10), Attribute::new(11), Attribute::new(12)];
         let skill_value = SkillPoints::new(12);
         let modifiers = ModifierState::from_modifiers([Modifier::FatePoint]);
+        let extra_quality_levels_on_success = Some(QL_TWO);
+        let extra_skill_points_on_success = SkillPoints::new(3);
         let partial_skill_check_state = PartialSkillCheckState {
             attributes,
             roll_caps: [None; DICE_PER_SKILL_CHECK],
             fixed_rolls: [Some(roll(7)), Some(roll(8)), Some(roll(9))],
             skill_value,
-            quality_level_increase: None,
+            extra_quality_levels_on_success,
+            extra_skill_points_on_success,
             modifiers: modifiers.clone(),
         };
 
@@ -493,7 +547,8 @@ mod tests {
             attributes,
             rolls: [roll(7), roll(8), roll(9)],
             skill_value,
-            quality_level_increase: None,
+            extra_quality_levels_on_success,
+            extra_skill_points_on_success,
             modifiers,
         });
     }
@@ -503,7 +558,8 @@ mod tests {
             attributes: [Attribute::new(8), Attribute::new(8), Attribute::new(8)],
             rolls: [roll(8), roll(8), roll(8)],
             skill_value: SkillPoints::new(8),
-            quality_level_increase: None,
+            extra_quality_levels_on_success: None,
+            extra_skill_points_on_success: SkillPoints::new(0),
             modifiers: ModifierState::default(),
         }
     }
@@ -700,7 +756,8 @@ mod tests {
                 Modifier::FatePoint,
                 aptitude_1,
             ]),
-            quality_level_increase: None,
+            extra_quality_levels_on_success: None,
+            extra_skill_points_on_success: SkillPoints::new(0),
         };
         let action = SkillCheckAction::ConsumeModifier {
             modifier: Modifier::FatePoint,
@@ -753,7 +810,8 @@ mod tests {
             rolls: [roll(1), roll(2), roll(3)],
             skill_value: SkillPoints::new(5),
             modifiers: ModifierState::from_modifiers([Modifier::FatePoint, aptitude_2]),
-            quality_level_increase: None,
+            extra_quality_levels_on_success: None,
+            extra_skill_points_on_success: SkillPoints::new(0),
         };
         let action = SkillCheckAction::ConsumeModifier {
             modifier: aptitude_2,
@@ -783,7 +841,8 @@ mod tests {
                 Modifier::FatePoint,
                 Modifier::Aptitude(Aptitude::new(1).unwrap()),
             ]),
-            quality_level_increase: None,
+            extra_quality_levels_on_success: None,
+            extra_skill_points_on_success: SkillPoints::new(0),
         };
 
         let action = SkillCheckAction::Accept;
@@ -806,15 +865,16 @@ mod tests {
     #[case::with_old_ql_increase(Some(QL_ONE), QL_TWO)]
     #[case::with_max_ql_increase(Some(QL_SIX), QL_SIX)]
     fn increase_quality_level_apply(
-        #[case] old_quality_level_increase: Option<QualityLevel>,
-        #[case] expected_quality_level_increase: QualityLevel,
+        #[case] old_extra_quality_levels_on_success: Option<QualityLevel>,
+        #[case] expected_extra_quality_levels_on_success: QualityLevel,
     ) {
         let skill_check_state = SkillCheckState {
             attributes: [Attribute::new(10), Attribute::new(11), Attribute::new(12)],
             rolls: [roll(13), roll(2), roll(15)],
             skill_value: SkillPoints::new(6),
             modifiers: ModifierState::from_modifiers([Modifier::FatePoint]),
-            quality_level_increase: old_quality_level_increase,
+            extra_quality_levels_on_success: old_extra_quality_levels_on_success,
+            extra_skill_points_on_success: SkillPoints::new(0),
         };
 
         let action = SkillCheckAction::ConsumeModifier {
@@ -825,8 +885,8 @@ mod tests {
         let result = action.apply(skill_check_state);
 
         if let SkillCheckActionResult::State(applied_state) = result {
-            assert_that!(applied_state.quality_level_increase)
-                .contains(expected_quality_level_increase);
+            assert_that!(applied_state.extra_quality_levels_on_success)
+                .contains(expected_extra_quality_levels_on_success);
             assert_that!(applied_state.modifiers).is_equal_to(ModifierState::default());
         }
     }
