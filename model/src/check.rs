@@ -153,14 +153,15 @@ impl SkillCheckState {
                 .map(|(attribute, roll)| attribute.missing_skill_points(roll))
                 .sum();
             let mut remaining_skill_points = self.skill_value - missing_skill_points;
+            let critical_success = min_rolls >= DICE_PER_SKILL_CHECK - 1;
 
-            if !remaining_skill_points.is_negative() {
+            if !remaining_skill_points.is_negative() || critical_success {
                 remaining_skill_points += self.extra_skill_points_on_success;
             }
 
             let quality_level = remaining_skill_points.quality_level();
 
-            if min_rolls >= DICE_PER_SKILL_CHECK - 1 {
+            if critical_success {
                 let quality_level = quality_level
                     .unwrap_or(QualityLevel::ONE)
                     .saturating_add_option(self.extra_quality_levels_on_success);
@@ -490,6 +491,10 @@ mod tests {
     #[case::extra_skill_points_on_success_spectacular_success(
         skill([13, 14, 15], 6).roll([1, 1, 1]).extra_skill_points_on_success(4),
         has_outcome(SpectacularSuccess(QL_FOUR))
+    )]
+    #[case::extra_skill_points_on_success_critical_success_that_would_have_failed(
+        skill([10, 10, 10], 9).roll([1, 1, 20]).extra_skill_points_on_success(5),
+        has_outcome(CriticalSuccess(QL_TWO))
     )]
     #[case::remaining_fate_points(
         skill([10, 10, 10], 10).roll([10, 10, 10]).fate_points(3),
