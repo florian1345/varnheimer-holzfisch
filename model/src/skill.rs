@@ -1,7 +1,6 @@
 use std::iter::Sum;
 use std::num::NonZeroU8;
-use std::ops::{Add, AddAssign, Index, IndexMut, Sub, SubAssign};
-use std::slice::Iter;
+use std::ops::{Add, AddAssign, Sub, SubAssign};
 
 use crate::roll::Roll;
 
@@ -44,38 +43,6 @@ impl QualityLevel {
 
     pub fn as_u8(self) -> u8 {
         self.0.get()
-    }
-
-    fn index(self) -> usize {
-        (self.0.get() - 1) as usize
-    }
-}
-
-// TODO can this be deleted?
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-pub struct QualityLevelMap<T>([T; QUALITY_LEVEL_COUNT]);
-
-impl<T> QualityLevelMap<T> {
-    pub fn iter(&self) -> Iter<'_, T> {
-        self.0.iter()
-    }
-
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
-        self.0.iter_mut()
-    }
-}
-
-impl<T> Index<QualityLevel> for QualityLevelMap<T> {
-    type Output = T;
-
-    fn index(&self, index: QualityLevel) -> &T {
-        &self.0[index.index()]
-    }
-}
-
-impl<T> IndexMut<QualityLevel> for QualityLevelMap<T> {
-    fn index_mut(&mut self, index: QualityLevel) -> &mut T {
-        &mut self.0[index.index()]
     }
 }
 
@@ -163,31 +130,10 @@ impl Attribute {
 #[cfg(test)]
 mod tests {
 
-    use kernal::collections::Collection;
-    use kernal::collections::ordered::OrderedCollection;
     use kernal::prelude::*;
     use rstest::rstest;
 
     use super::*;
-    use crate::test_util;
-
-    impl<'collection, T> Collection<'collection> for QualityLevelMap<T> {
-        type Item = T;
-        type Iter<'iter>
-            = Iter<'iter, T>
-        where
-            Self: 'iter,
-            'collection: 'iter;
-
-        fn iterator<'reference>(&'reference self) -> Self::Iter<'reference>
-        where
-            'collection: 'reference,
-        {
-            self.iter()
-        }
-    }
-
-    impl<'collection, T> OrderedCollection<'collection> for QualityLevelMap<T> {}
 
     #[test]
     fn all_quality_levels_correctly_initialized() {
@@ -197,28 +143,6 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_that!(all_quality_levels_as_u8).contains_exactly_in_given_order(1..=6);
-    }
-
-    #[test]
-    fn quality_level_map_indexing_works() {
-        let map = test_util::create_quality_level_map([5, 10, 15, 20, 25, 30]);
-
-        assert_that!(map[QualityLevel::ONE]).is_equal_to(5);
-        assert_that!(map[QualityLevel::TWO]).is_equal_to(10);
-        assert_that!(map[QualityLevel::THREE]).is_equal_to(15);
-        assert_that!(map[QualityLevel::FOUR]).is_equal_to(20);
-        assert_that!(map[QualityLevel::FIVE]).is_equal_to(25);
-        assert_that!(map[QualityLevel::SIX]).is_equal_to(30);
-    }
-
-    #[test]
-    fn quality_level_iter_works() {
-        let map = test_util::create_quality_level_map([5, 10, 15, 20, 25, 30]);
-        let iter_collected = map.iter().cloned().collect::<Vec<_>>();
-        let iter_mut_collected = map.iter().cloned().collect::<Vec<_>>();
-
-        assert_that!(iter_collected).contains_exactly_in_given_order([5, 10, 15, 20, 25, 30]);
-        assert_that!(iter_mut_collected).contains_exactly_in_given_order([5, 10, 15, 20, 25, 30]);
     }
 
     #[rstest]
