@@ -4,7 +4,7 @@ use std::num::NonZeroUsize;
 
 use crate::check::{DICE_PER_SKILL_CHECK, SkillCheckOutcome};
 use crate::roll::Roll;
-use crate::skill::QualityLevel;
+use crate::skill::{QualityLevel, SkillPoints};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Reroll([bool; DICE_PER_SKILL_CHECK]);
@@ -82,6 +82,8 @@ impl Aptitude {
 pub enum ModifierAction {
     RerollByFate(Reroll),
     RerollByAptitude(Reroll),
+    IncreaseSkillPoints(SkillPoints),
+    IncreaseSkillPointsOnSuccess(SkillPoints),
     IncreaseQualityLevel,
 }
 
@@ -92,6 +94,9 @@ pub enum ModifierAction {
 pub enum Modifier {
     FatePoint,
     Aptitude(Aptitude),
+    ExtraSkillPoints(SkillPoints),
+    ExtraSkillPointsOnSuccess(SkillPoints),
+    ExtraQualityLevelOnSuccess,
 }
 
 impl Modifier {
@@ -107,10 +112,8 @@ impl Modifier {
                     .map(ModifierAction::RerollByFate)
                     .collect::<Vec<_>>();
 
-                if let Some(quality_level) = current_outcome.quality_level() {
-                    if quality_level != QualityLevel::SIX {
-                        legal_actions.push(ModifierAction::IncreaseQualityLevel);
-                    }
+                if current_outcome.is_improvable_success() {
+                    legal_actions.push(ModifierAction::IncreaseQualityLevel);
                 }
 
                 legal_actions
@@ -119,6 +122,30 @@ impl Modifier {
                 .legal_rerolls()
                 .map(ModifierAction::RerollByAptitude)
                 .collect(),
+            Modifier::ExtraSkillPoints(skill_points) => {
+                if current_outcome.quality_level() != Some(QualityLevel::SIX) {
+                    vec![ModifierAction::IncreaseSkillPoints(skill_points)]
+                }
+                else {
+                    Vec::new()
+                }
+            },
+            Modifier::ExtraSkillPointsOnSuccess(skill_points) => {
+                if current_outcome.is_improvable_success() {
+                    vec![ModifierAction::IncreaseSkillPointsOnSuccess(skill_points)]
+                }
+                else {
+                    Vec::new()
+                }
+            },
+            Modifier::ExtraQualityLevelOnSuccess => {
+                if current_outcome.is_improvable_success() {
+                    vec![ModifierAction::IncreaseQualityLevel]
+                }
+                else {
+                    Vec::new()
+                }
+            },
         }
     }
 }

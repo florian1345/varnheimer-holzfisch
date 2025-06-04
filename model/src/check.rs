@@ -44,6 +44,12 @@ impl SkillCheckOutcome {
             SkillCheckOutcomeKind::CriticalFailure | SkillCheckOutcomeKind::SpectacularFailure
         )
     }
+
+    pub fn is_improvable_success(self) -> bool {
+        self.quality_level()
+            .map(|quality_level| quality_level != QualityLevel::SIX)
+            .unwrap_or(false)
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -264,6 +270,21 @@ impl SkillCheckAction {
                             ..state
                         })
                     },
+                    ModifierAction::IncreaseSkillPoints(skill_points) => {
+                        SkillCheckActionResult::State(SkillCheckState {
+                            skill_value: state.skill_value + skill_points,
+                            modifiers,
+                            ..state
+                        })
+                    },
+                    ModifierAction::IncreaseSkillPointsOnSuccess(skill_points) => {
+                        SkillCheckActionResult::State(SkillCheckState {
+                            extra_skill_points_on_success: state.extra_skill_points_on_success
+                                + skill_points,
+                            modifiers,
+                            ..state
+                        })
+                    },
                 }
             },
         }
@@ -305,10 +326,40 @@ mod tests {
 
     use kernal::prelude::*;
     use rstest::rstest;
+    use rstest_reuse::{apply, template};
 
     use super::SkillCheckOutcomeKind::*;
     use super::*;
     use crate::modifier::{Aptitude, Reroll};
+
+    #[rstest]
+    #[case(Success(QL_ONE))]
+    #[case(CriticalSuccess(QL_TWO))]
+    #[case(SpectacularSuccess(QL_FIVE))]
+    fn skill_check_outcome_is_improvable_success_true(#[case] kind: SkillCheckOutcomeKind) {
+        let outcome = SkillCheckOutcome {
+            kind,
+            remaining_fate_points: 0,
+        };
+
+        assert_that!(outcome.is_improvable_success()).is_true();
+    }
+
+    #[rstest]
+    #[case(Failure)]
+    #[case(CriticalFailure)]
+    #[case(SpectacularFailure)]
+    #[case(Success(QL_SIX))]
+    #[case(CriticalSuccess(QL_SIX))]
+    #[case(SpectacularSuccess(QL_SIX))]
+    fn skill_check_outcome_is_improvable_success_false(#[case] kind: SkillCheckOutcomeKind) {
+        let outcome = SkillCheckOutcome {
+            kind,
+            remaining_fate_points: 0,
+        };
+
+        assert_that!(outcome.is_improvable_success()).is_false();
+    }
 
     const fn roll(roll: u8) -> Roll {
         Roll::new(roll).unwrap()
@@ -740,6 +791,147 @@ mod tests {
     }
 
     #[rstest]
+    #[case::failure([roll(19), roll(19), roll(19)], 5)]
+    #[case::success([roll(3), roll(4), roll(5)], 5)]
+    #[case::critical_success([roll(1), roll(1), roll(2)], 5)]
+    #[case::spectacular_success([roll(1), roll(1), roll(1)], 5)]
+    fn skill_check_legal_actions_with_extra_skill_points_applicable(
+        #[case] rolls: [Roll; DICE_PER_SKILL_CHECK],
+        #[case] skill_value: i32,
+    ) {
+        let skill_points = SkillPoints::new(2);
+        let modifier = Modifier::ExtraSkillPoints(skill_points);
+        let skill_check_state = SkillCheckState {
+            rolls,
+            skill_value: SkillPoints::new(skill_value),
+            modifiers: ModifierState::from_modifiers([modifier]),
+            ..skill_check_state_success_no_options()
+        };
+
+        assert_that!(skill_check_state.legal_actions()).contains_exactly_in_any_order([
+            SkillCheckAction::Accept,
+            SkillCheckAction::ConsumeModifier {
+                modifier,
+                action: ModifierAction::IncreaseSkillPoints(skill_points),
+            },
+        ]);
+    }
+
+    #[rstest]
+    #[case::critical_failure([roll(20), roll(3), roll(20)], 5)]
+    #[case::spectacular_failure([roll(20), roll(20), roll(20)], 5)]
+    #[case::max_quality_level([roll(3), roll(4), roll(5)], 18)]
+    fn skill_check_legal_actions_with_extra_skill_points_not_applicable(
+        #[case] rolls: [Roll; DICE_PER_SKILL_CHECK],
+        #[case] skill_value: i32,
+    ) {
+        let modifier = Modifier::ExtraSkillPoints(SkillPoints::new(1));
+        let skill_check_state = SkillCheckState {
+            rolls,
+            skill_value: SkillPoints::new(skill_value),
+            modifiers: ModifierState::from_modifiers([modifier]),
+            ..skill_check_state_success_no_options()
+        };
+
+        assert_that!(skill_check_state.legal_actions())
+            .contains_exactly_in_any_order([SkillCheckAction::Accept]);
+    }
+
+    #[test]
+    fn skill_check_legal_actions_with_extra_skill_points_on_success_applicable() {
+        let skill_points = SkillPoints::new(2);
+        let modifier = Modifier::ExtraSkillPointsOnSuccess(skill_points);
+        let skill_check_state = SkillCheckState {
+            rolls: [roll(5), roll(5), roll(5)],
+            modifiers: ModifierState::from_modifiers([modifier]),
+            ..skill_check_state_success_no_options()
+        };
+
+        assert_that!(skill_check_state.legal_actions()).contains_exactly_in_any_order([
+            SkillCheckAction::Accept,
+            SkillCheckAction::ConsumeModifier {
+                modifier,
+                action: ModifierAction::IncreaseSkillPointsOnSuccess(skill_points),
+            },
+        ]);
+    }
+
+    #[template]
+    #[rstest]
+    #[case::failure(SkillCheckState {
+        rolls: [roll(19), roll(19), roll(19)],
+        ..skill_check_state_success_no_options()
+        })]
+    #[case::critical_failure(SkillCheckState {
+        rolls: [roll(20), roll(19), roll(20)],
+        ..skill_check_state_success_no_options()
+        })]
+    #[case::spectacular_failure(SkillCheckState {
+        rolls: [roll(20), roll(20), roll(20)],
+        ..skill_check_state_success_no_options()
+        })]
+    #[case::max_quality_level(SkillCheckState {
+        rolls: [roll(2), roll(2), roll(2)],
+        skill_value: SkillPoints::new(18),
+        ..skill_check_state_success_no_options()
+        })]
+    #[case::max_quality_level_critical_success(SkillCheckState {
+        rolls: [roll(2), roll(1), roll(1)],
+        skill_value: SkillPoints::new(18),
+        ..skill_check_state_success_no_options()
+        })]
+    #[case::max_quality_level_spectacular_success(SkillCheckState {
+        rolls: [roll(1), roll(1), roll(1)],
+        skill_value: SkillPoints::new(18),
+        ..skill_check_state_success_no_options()
+        })]
+    fn failure_or_max_quality_level(#[case] skill_check_state: SkillCheckState) {}
+
+    #[apply(failure_or_max_quality_level)]
+    fn skill_check_legal_actions_with_extra_skill_points_on_success_not_applicable(
+        #[case] skill_check_state: SkillCheckState,
+    ) {
+        let modifier = Modifier::ExtraSkillPointsOnSuccess(SkillPoints::new(1));
+        let skill_check_state = SkillCheckState {
+            modifiers: ModifierState::from_modifiers([modifier]),
+            ..skill_check_state
+        };
+
+        assert_that!(skill_check_state.legal_actions())
+            .contains_exactly_in_any_order([SkillCheckAction::Accept]);
+    }
+
+    #[test]
+    fn skill_check_legal_actions_with_extra_quality_level_on_success_applicable() {
+        let skill_check_state = SkillCheckState {
+            rolls: [roll(5), roll(5), roll(5)],
+            modifiers: ModifierState::from_modifiers([Modifier::ExtraQualityLevelOnSuccess]),
+            ..skill_check_state_success_no_options()
+        };
+
+        assert_that!(skill_check_state.legal_actions()).contains_exactly_in_any_order([
+            SkillCheckAction::Accept,
+            SkillCheckAction::ConsumeModifier {
+                modifier: Modifier::ExtraQualityLevelOnSuccess,
+                action: ModifierAction::IncreaseQualityLevel,
+            },
+        ]);
+    }
+
+    #[apply(failure_or_max_quality_level)]
+    fn skill_check_legal_actions_with_extra_quality_level_on_success_not_applicable(
+        #[case] skill_check_state: SkillCheckState,
+    ) {
+        let skill_check_state = SkillCheckState {
+            modifiers: ModifierState::from_modifiers([Modifier::ExtraQualityLevelOnSuccess]),
+            ..skill_check_state
+        };
+
+        assert_that!(skill_check_state.legal_actions())
+            .contains_exactly_in_any_order([SkillCheckAction::Accept]);
+    }
+
+    #[rstest]
     #[case([false, false, true], [Some(roll(1)), Some(roll(2)), None])]
     #[case([false, true, false], [Some(roll(1)), None, Some(roll(3))])]
     #[case([false, true, true], [Some(roll(1)), None, None])]
@@ -892,6 +1084,58 @@ mod tests {
         if let SkillCheckActionResult::State(applied_state) = result {
             assert_that!(applied_state.extra_quality_levels_on_success)
                 .contains(expected_extra_quality_levels_on_success);
+            assert_that!(applied_state.modifiers).is_equal_to(ModifierState::default());
+        }
+    }
+
+    #[test]
+    fn increase_skill_points_apply() {
+        let modifier = Modifier::ExtraSkillPoints(SkillPoints::new(3));
+        let extra_skill_points_on_success = SkillPoints::new(1);
+        let skill_check_state = SkillCheckState {
+            skill_value: SkillPoints::new(6),
+            extra_skill_points_on_success,
+            modifiers: ModifierState::from_modifiers([modifier]),
+            ..skill_check_state_success_no_options()
+        };
+
+        let action = SkillCheckAction::ConsumeModifier {
+            modifier,
+            action: ModifierAction::IncreaseSkillPoints(SkillPoints::new(3)),
+        };
+
+        let result = action.apply(skill_check_state);
+
+        if let SkillCheckActionResult::State(applied_state) = result {
+            assert_that!(applied_state.extra_skill_points_on_success)
+                .is_equal_to(extra_skill_points_on_success);
+            assert_that!(applied_state.skill_value).is_equal_to(SkillPoints::new(9));
+            assert_that!(applied_state.modifiers).is_equal_to(ModifierState::default());
+        }
+    }
+
+    #[test]
+    fn increase_skill_points_on_success_apply() {
+        let modifier = Modifier::ExtraSkillPointsOnSuccess(SkillPoints::new(3));
+        let skill_value = SkillPoints::new(6);
+        let skill_check_state = SkillCheckState {
+            skill_value,
+            extra_skill_points_on_success: SkillPoints::new(1),
+            modifiers: ModifierState::from_modifiers([modifier]),
+            ..skill_check_state_success_no_options()
+        };
+
+        let action = SkillCheckAction::ConsumeModifier {
+            modifier,
+            action: ModifierAction::IncreaseSkillPointsOnSuccess(SkillPoints::new(3)),
+        };
+
+        let result = action.apply(skill_check_state);
+
+        if let SkillCheckActionResult::State(applied_state) = result {
+            assert_that!(applied_state.extra_skill_points_on_success)
+                .is_equal_to(SkillPoints::new(4));
+            assert_that!(applied_state.skill_value).is_equal_to(skill_value);
             assert_that!(applied_state.modifiers).is_equal_to(ModifierState::default());
         }
     }
