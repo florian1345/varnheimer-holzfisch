@@ -1,7 +1,6 @@
 pub mod check;
 pub mod engine;
 pub mod evaluation;
-pub mod modifier;
 pub mod probability;
 pub mod roll;
 pub mod skill;

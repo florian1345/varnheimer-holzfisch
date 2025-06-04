@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::num::NonZeroUsize;
 
-use crate::check::{DICE_PER_SKILL_CHECK, SkillCheckOutcome};
+use crate::check::DICE_PER_SKILL_CHECK;
+use crate::check::outcome::SkillCheckOutcome;
 use crate::roll::Roll;
 use crate::skill::{QualityLevel, SkillPoints};
 

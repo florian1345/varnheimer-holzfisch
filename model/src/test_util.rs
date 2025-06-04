@@ -1,7 +1,7 @@
 use kernal::abs_diff::AbsDiff;
 use kernal::prelude::*;
 
-use crate::check::SkillCheckOutcomeProbabilities;
+use crate::check::outcome::SkillCheckOutcomeProbabilities;
 use crate::evaluation::Evaluation;
 use crate::probability::Probability;
 use crate::skill::{QUALITY_LEVEL_COUNT, QualityLevel, QualityLevelMap};

@@ -1,8 +1,8 @@
+use model::check::outcome::SkillCheckOutcomeProbabilities;
 use model::check::{
     PartialSkillCheckState,
     SkillCheckAction,
     SkillCheckActionResult,
-    SkillCheckOutcomeProbabilities,
     SkillCheckState,
 };
 use model::engine::SkillCheckEngine;

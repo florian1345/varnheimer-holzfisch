@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg};
 
-use crate::check::SkillCheckOutcome;
+use crate::check::outcome::SkillCheckOutcome;
 use crate::probability::Probability;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

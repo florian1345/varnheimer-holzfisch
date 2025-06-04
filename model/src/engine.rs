@@ -1,9 +1,5 @@
-use crate::check::{
-    PartialSkillCheckState,
-    SkillCheckAction,
-    SkillCheckOutcomeProbabilities,
-    SkillCheckState,
-};
+use crate::check::outcome::SkillCheckOutcomeProbabilities;
+use crate::check::{PartialSkillCheckState, SkillCheckAction, SkillCheckState};
 use crate::evaluation::Evaluated;
 
 pub trait SkillCheckEngine {
