@@ -261,7 +261,7 @@ mod tests {
     #[case(QualityLevel::FIVE)]
     #[case(QualityLevel::SIX)]
     fn quality_level_saturating_add_none_is_self(#[case] quality_level: QualityLevel) {
-        assert_that!(quality_level.saturating_add_option(Option::None)).is_equal_to(quality_level);
+        assert_that!(quality_level.saturating_add_option(None)).is_equal_to(quality_level);
     }
 
     #[rstest]

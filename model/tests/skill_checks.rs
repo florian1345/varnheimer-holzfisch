@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use engine::VarnheimerHolzfischEngine;
 use kernal::prelude::*;
 use model::check::modifier::{Aptitude, Modifier, ModifierAction, ModifierState, Reroll};
 use model::check::outcome::{
@@ -9,7 +8,7 @@ use model::check::outcome::{
     SkillCheckOutcomeProbabilities,
 };
 use model::check::{PartialSkillCheckState, SkillCheckAction, SkillCheckState};
-use model::engine::SkillCheckEngine;
+use model::engine::VarnheimerHolzfischEngine;
 use model::evaluation::{Evaluation, SkillCheckEvaluator};
 use model::probability::Probability;
 use model::roll::Roll;
