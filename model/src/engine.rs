@@ -23,7 +23,7 @@ impl<EvaluatorT: SkillCheckEvaluator> VarnheimerHolzfischEngine<EvaluatorT> {
     ) -> Evaluated<SkillCheckOutcomeProbabilities> {
         match action.apply(state) {
             SkillCheckActionResult::Done(outcome) => {
-                let evaluation = self.evaluator.evaluate(outcome);
+                let evaluation = self.evaluator.evaluate(&outcome);
 
                 Evaluated {
                     evaluated: SkillCheckOutcomeProbabilities::of_known_outcome(outcome),

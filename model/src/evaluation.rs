@@ -104,7 +104,7 @@ impl<T> Evaluated<T> {
 }
 
 pub trait SkillCheckEvaluator {
-    fn evaluate(&mut self, outcome: SkillCheckOutcome) -> Evaluation;
+    fn evaluate(&mut self, outcome: &SkillCheckOutcome) -> Evaluation;
 }
 
 #[cfg(test)]

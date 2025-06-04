@@ -28,7 +28,7 @@ impl SkillCheckState {
             .available_modifiers()
             .flat_map(|modifier| {
                 modifier
-                    .actions(current_outcome)
+                    .actions(&current_outcome)
                     .into_iter()
                     .map(move |action| SkillCheckAction::ConsumeModifier { modifier, action })
             })
@@ -89,7 +89,7 @@ impl SkillCheckState {
     pub fn current_outcome(&self) -> SkillCheckOutcome {
         SkillCheckOutcome {
             kind: self.current_outcome_kind(),
-            remaining_fate_points: self.modifiers.count_of(Modifier::FatePoint),
+            remaining_modifiers: self.modifiers.clone(),
         }
     }
 }
@@ -355,7 +355,10 @@ mod tests {
         fn build(self) -> SkillCheckOutcome {
             SkillCheckOutcome {
                 kind: self.kind,
-                remaining_fate_points: self.remaining_fate_points,
+                remaining_modifiers: ModifierState::from_modifiers(vec![
+                    Modifier::FatePoint;
+                    self.remaining_fate_points
+                ]),
             }
         }
     }
@@ -1014,13 +1017,10 @@ mod tests {
     #[test]
     fn accept_apply() {
         let skill_check_state = SkillCheckState {
-            attributes: [Attribute::new(10), Attribute::new(11), Attribute::new(12)],
-            rolls: [roll(13), roll(2), roll(15)],
+            attributes: [Attribute::new(12), Attribute::new(13), Attribute::new(12)],
+            rolls: [roll(14), roll(2), roll(15)],
             skill_value: SkillPoints::new(6),
-            modifiers: ModifierState::from_modifiers([
-                Modifier::FatePoint,
-                Modifier::Aptitude(Aptitude::new(1).unwrap()),
-            ]),
+            modifiers: ModifierState::from_modifiers([Modifier::FatePoint]),
             extra_quality_levels_on_success: None,
             extra_skill_points_on_success: SkillPoints::new(0),
         };
@@ -1032,7 +1032,7 @@ mod tests {
         if let SkillCheckActionResult::Done(outcome) = result {
             assert_that!(outcome).is_equal_to(SkillCheckOutcome {
                 kind: Success(QL_ONE),
-                remaining_fate_points: 1,
+                remaining_modifiers: ModifierState::from_modifiers([Modifier::FatePoint]),
             });
         }
         else {

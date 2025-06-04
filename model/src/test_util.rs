@@ -28,8 +28,8 @@ impl AbsDiff for SkillCheckOutcomeProbabilities {
             .map(|(outcome, _)| outcome)
             .chain(other.outcomes().map(|(outcome, _)| outcome))
             .map(|outcome| {
-                self.probability_of_outcome(outcome)
-                    .abs_diff(&other.probability_of_outcome(outcome))
+                self.probability_of_outcome(&outcome)
+                    .abs_diff(&other.probability_of_outcome(&outcome))
             })
             .reduce(f64::max)
             .unwrap_or(0.0)

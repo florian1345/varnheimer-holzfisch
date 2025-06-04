@@ -1,5 +1,5 @@
-use std::collections::HashMap;
-use std::collections::hash_map::Entry;
+use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 use std::num::NonZeroUsize;
 
 use crate::check::DICE_PER_SKILL_CHECK;
@@ -59,7 +59,7 @@ impl Reroll {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Aptitude {
     max_dice: NonZeroUsize,
 }
@@ -91,7 +91,7 @@ pub enum ModifierAction {
 /// Modifiers define the actions the player can take during a skill check. Each modifier can enable
 /// a number of actions. For example, a fate point can be used to reroll some dice or increase the
 /// quality level.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Modifier {
     FatePoint,
     Aptitude(Aptitude),
@@ -101,7 +101,7 @@ pub enum Modifier {
 }
 
 impl Modifier {
-    pub fn actions(self, current_outcome: SkillCheckOutcome) -> Vec<ModifierAction> {
+    pub fn actions(self, current_outcome: &SkillCheckOutcome) -> Vec<ModifierAction> {
         if current_outcome.is_critical_failure() {
             return Vec::new();
         }
@@ -151,9 +151,9 @@ impl Modifier {
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct ModifierState {
-    available_modifiers: HashMap<Modifier, NonZeroUsize>,
+    available_modifiers: BTreeMap<Modifier, NonZeroUsize>,
 }
 
 impl ModifierState {

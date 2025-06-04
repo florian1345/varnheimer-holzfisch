@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::ops::{Mul, MulAssign};
 
+use crate::check::modifier::ModifierState;
 use crate::probability::Probability;
 use crate::skill::QualityLevel;
 
@@ -17,16 +18,15 @@ pub enum SkillCheckOutcomeKind {
 }
 
 /// Contains all information necessary to evaluate the outcome of a skill check. This includes the
-/// [SkillCheckOutcomeKind] as well as surrounding information such as the number of remaining fate
-/// points.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+/// [SkillCheckOutcomeKind] as well as information about the unused modifiers.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct SkillCheckOutcome {
     pub kind: SkillCheckOutcomeKind,
-    pub remaining_fate_points: usize,
+    pub remaining_modifiers: ModifierState,
 }
 
 impl SkillCheckOutcome {
-    pub fn quality_level(self) -> Option<QualityLevel> {
+    pub fn quality_level(&self) -> Option<QualityLevel> {
         match self.kind {
             SkillCheckOutcomeKind::Success(ql)
             | SkillCheckOutcomeKind::CriticalSuccess(ql)
@@ -35,14 +35,14 @@ impl SkillCheckOutcome {
         }
     }
 
-    pub fn is_critical_failure(self) -> bool {
+    pub fn is_critical_failure(&self) -> bool {
         matches!(
             self.kind,
             SkillCheckOutcomeKind::CriticalFailure | SkillCheckOutcomeKind::SpectacularFailure
         )
     }
 
-    pub fn is_improvable_success(self) -> bool {
+    pub fn is_improvable_success(&self) -> bool {
         self.quality_level()
             .map(|quality_level| quality_level != QualityLevel::SIX)
             .unwrap_or(false)
@@ -61,23 +61,23 @@ impl SkillCheckOutcomeProbabilities {
         }
     }
 
-    pub fn outcomes(&self) -> impl Iterator<Item = (SkillCheckOutcome, Probability)> + use<'_> {
+    pub fn outcomes(&self) -> impl Iterator<Item = (&SkillCheckOutcome, Probability)> {
         self.map
             .iter()
-            .map(|(&outcome, &probability)| (outcome, probability))
+            .map(|(outcome, &probability)| (outcome, probability))
     }
 
-    pub fn probability_of_outcome(&self, outcome: SkillCheckOutcome) -> Probability {
+    pub fn probability_of_outcome(&self, outcome: &SkillCheckOutcome) -> Probability {
         self.map.get(&outcome).cloned().unwrap_or(Probability::ZERO)
     }
 
     pub fn saturating_add_assign(&mut self, other: &SkillCheckOutcomeProbabilities) {
-        for (&outcome, &probability) in &other.map {
-            if let Some(value) = self.map.get_mut(&outcome) {
+        for (outcome, &probability) in &other.map {
+            if let Some(value) = self.map.get_mut(outcome) {
                 *value = (*value).saturating_add(probability);
             }
             else {
-                self.map.insert(outcome, probability);
+                self.map.insert(outcome.clone(), probability);
             }
         }
     }
@@ -116,6 +116,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::check::modifier::Modifier;
     use crate::check::outcome::SkillCheckOutcomeKind::{
         CriticalFailure,
         CriticalSuccess,
@@ -134,7 +135,7 @@ mod tests {
     fn skill_check_outcome_is_improvable_success_true(#[case] kind: SkillCheckOutcomeKind) {
         let outcome = SkillCheckOutcome {
             kind,
-            remaining_fate_points: 0,
+            remaining_modifiers: ModifierState::default(),
         };
 
         assert_that!(outcome.is_improvable_success()).is_true();
@@ -150,7 +151,7 @@ mod tests {
     fn skill_check_outcome_is_improvable_success_false(#[case] kind: SkillCheckOutcomeKind) {
         let outcome = SkillCheckOutcome {
             kind,
-            remaining_fate_points: 0,
+            remaining_modifiers: ModifierState::default(),
         };
 
         assert_that!(outcome.is_improvable_success()).is_false();
@@ -169,50 +170,60 @@ mod tests {
         assert_that!(&actual.map).is_empty();
     }
 
-    const OUTCOME_1: SkillCheckOutcome = SkillCheckOutcome {
-        kind: Failure,
-        remaining_fate_points: 0,
-    };
-    const OUTCOME_2: SkillCheckOutcome = SkillCheckOutcome {
-        kind: Success(QualityLevel::ONE),
-        remaining_fate_points: 1,
-    };
-    const OUTCOME_3: SkillCheckOutcome = SkillCheckOutcome {
-        kind: CriticalSuccess(QualityLevel::TWO),
-        remaining_fate_points: 0,
-    };
+    fn outcome_1() -> SkillCheckOutcome {
+        SkillCheckOutcome {
+            kind: Failure,
+            remaining_modifiers: ModifierState::default(),
+        }
+    }
+
+    fn outcome_2() -> SkillCheckOutcome {
+        SkillCheckOutcome {
+            kind: Success(QualityLevel::ONE),
+            remaining_modifiers: ModifierState::from_modifiers([Modifier::FatePoint]),
+        }
+    }
+
+    fn outcome_3() -> SkillCheckOutcome {
+        SkillCheckOutcome {
+            kind: CriticalSuccess(QualityLevel::TWO),
+            remaining_modifiers: ModifierState::default(),
+        }
+    }
 
     #[test]
     fn skill_check_outcome_probabilities_mul_works_for_non_empty_map() {
-        let skill_check_probabilities =
-            SkillCheckOutcomeProbabilities::from([(OUTCOME_1, prob(0.2)), (OUTCOME_2, prob(0.4))]);
+        let skill_check_probabilities = SkillCheckOutcomeProbabilities::from([
+            (outcome_1(), prob(0.2)),
+            (outcome_2(), prob(0.4)),
+        ]);
 
         let actual = skill_check_probabilities * prob(0.5);
         let epsilon = 0.001;
 
         assert_that!(&actual.map).has_length(2);
-        assert_that!(actual.probability_of_outcome(OUTCOME_1)).is_close_to(prob(0.1), epsilon);
-        assert_that!(actual.probability_of_outcome(OUTCOME_2)).is_close_to(prob(0.2), epsilon);
+        assert_that!(actual.probability_of_outcome(&outcome_1())).is_close_to(prob(0.1), epsilon);
+        assert_that!(actual.probability_of_outcome(&outcome_2())).is_close_to(prob(0.2), epsilon);
     }
 
     #[rstest]
     #[case::both_empty([], [], [])]
-    #[case::lhs_empty([], [(OUTCOME_1, prob(0.5))], [(OUTCOME_1, prob(0.5))])]
-    #[case::rhs_empty([(OUTCOME_1, prob(0.5))], [], [(OUTCOME_1, prob(0.5))])]
+    #[case::lhs_empty([], [(outcome_1(), prob(0.5))], [(outcome_1(), prob(0.5))])]
+    #[case::rhs_empty([(outcome_1(), prob(0.5))], [], [(outcome_1(), prob(0.5))])]
     #[case::disjunctive(
-        [(OUTCOME_1, prob(0.2))],
-        [(OUTCOME_2, prob(0.3)), (OUTCOME_3, prob(0.5))],
-        [(OUTCOME_1, prob(0.2)), (OUTCOME_2, prob(0.3)), (OUTCOME_3, prob(0.5))]
+        [(outcome_1(), prob(0.2))],
+        [(outcome_2(), prob(0.3)), (outcome_3(), prob(0.5))],
+        [(outcome_1(), prob(0.2)), (outcome_2(), prob(0.3)), (outcome_3(), prob(0.5))]
     )]
     #[case::overlap_without_saturation(
-        [(OUTCOME_1, prob(0.3))],
-        [(OUTCOME_1, prob(0.4)), (OUTCOME_2, prob(0.1))],
-        [(OUTCOME_1, prob(0.7)), (OUTCOME_2, prob(0.1))]
+        [(outcome_1(), prob(0.3))],
+        [(outcome_1(), prob(0.4)), (outcome_2(), prob(0.1))],
+        [(outcome_1(), prob(0.7)), (outcome_2(), prob(0.1))]
     )]
     #[case::overlap_with_saturation(
-        [(OUTCOME_1, prob(0.5)), (OUTCOME_2, prob(0.6))],
-        [(OUTCOME_1, prob(0.5)), (OUTCOME_2, prob(0.5))],
-        [(OUTCOME_1, prob(1.0)), (OUTCOME_2, prob(1.0))]
+        [(outcome_1(), prob(0.5)), (outcome_2(), prob(0.6))],
+        [(outcome_1(), prob(0.5)), (outcome_2(), prob(0.5))],
+        [(outcome_1(), prob(1.0)), (outcome_2(), prob(1.0))]
     )]
     fn skill_check_outcome_probabilities_saturating_add_works(
         #[case] lhs: impl IntoIterator<Item = (SkillCheckOutcome, Probability)>,

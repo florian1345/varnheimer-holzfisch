@@ -33,9 +33,9 @@ impl PerOutcomeEvaluator {
 }
 
 impl SkillCheckEvaluator for PerOutcomeEvaluator {
-    fn evaluate(&mut self, outcome: SkillCheckOutcome) -> Evaluation {
+    fn evaluate(&mut self, outcome: &SkillCheckOutcome) -> Evaluation {
         self.outcomes
-            .get(&outcome)
+            .get(outcome)
             .cloned()
             .unwrap_or(Evaluation::ZERO)
     }
@@ -59,12 +59,13 @@ impl Default for QualityLevelEvaluator {
 }
 
 impl SkillCheckEvaluator for QualityLevelEvaluator {
-    fn evaluate(&mut self, outcome: SkillCheckOutcome) -> Evaluation {
+    fn evaluate(&mut self, outcome: &SkillCheckOutcome) -> Evaluation {
         let quality_level_value = outcome
             .quality_level()
             .and_then(|ql| self.eval_by_ql.get(&ql).cloned())
             .unwrap_or(Evaluation::ZERO);
-        let fate_point_value = self.fate_point_value * outcome.remaining_fate_points;
+        let fate_point_value =
+            self.fate_point_value * outcome.remaining_modifiers.count_of(Modifier::FatePoint);
 
         quality_level_value + fate_point_value
     }
@@ -81,7 +82,7 @@ fn eval(value: f64) -> Evaluation {
 fn outcome_no_fate_points(kind: SkillCheckOutcomeKind) -> SkillCheckOutcome {
     SkillCheckOutcome {
         kind,
-        remaining_fate_points: 0,
+        remaining_modifiers: ModifierState::default(),
     }
 }
 
@@ -99,9 +100,9 @@ fn simple_call_with_zero_skill_points() {
         outcome_no_fate_points(SkillCheckOutcomeKind::SpectacularSuccess(QualityLevel::ONE));
     let mut engine = VarnheimerHolzfischEngine {
         evaluator: PerOutcomeEvaluator::new([
-            (success, success_eval),
-            (critical_success, critical_success_eval),
-            (spectacular_success, spectacular_success_eval),
+            (success.clone(), success_eval),
+            (critical_success.clone(), critical_success_eval),
+            (spectacular_success.clone(), spectacular_success_eval),
         ]),
     };
 
