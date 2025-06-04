@@ -130,6 +130,7 @@ impl SkillCheckAction {
                             extra_quality_levels_on_success: state.extra_quality_levels_on_success,
                             extra_skill_points_on_success: state.extra_skill_points_on_success,
                             modifiers,
+                            inaptitude: false,
                         })
                     },
                     ModifierAction::RerollByAptitude(reroll) => {
@@ -152,6 +153,7 @@ impl SkillCheckAction {
                             extra_quality_levels_on_success: state.extra_quality_levels_on_success,
                             extra_skill_points_on_success: state.extra_skill_points_on_success,
                             modifiers,
+                            inaptitude: false,
                         })
                     },
                     ModifierAction::IncreaseQualityLevel => {
@@ -196,10 +198,15 @@ pub struct PartialSkillCheckState {
     pub extra_quality_levels_on_success: Option<QualityLevel>,
     pub extra_skill_points_on_success: SkillPoints,
     pub modifiers: ModifierState,
+    pub inaptitude: bool,
 }
 
 impl PartialSkillCheckState {
     pub fn as_skill_check_state(&self) -> Option<SkillCheckState> {
+        if self.inaptitude {
+            return None;
+        }
+
         let mut rolls = [Roll::MIN; DICE_PER_SKILL_CHECK];
 
         for (roll, &optional_fixed_roll) in rolls.iter_mut().zip(self.fixed_rolls.iter()) {
@@ -214,6 +221,31 @@ impl PartialSkillCheckState {
             extra_skill_points_on_success: self.extra_skill_points_on_success,
             modifiers: self.modifiers.clone(),
         })
+    }
+
+    /// Marks the best die to be rerolled (removes its roll) and removes the inaptitude flag from
+    /// this state.
+    ///
+    /// The best die is defined according to the VTT DSA plugin as the die with the lowest value
+    /// relative to the corresponding attribute. If there is a tie, the first one of the tied dice
+    /// is rerolled.
+    pub fn apply_inaptitude(&mut self) {
+        if !self.inaptitude {
+            panic!("cannot apply inaptitude: no inaptitude required");
+        }
+
+        let die_idx = self
+            .fixed_rolls
+            .into_iter()
+            .map(|roll| roll.expect("cannot apply inaptitude: incomplete rolls"))
+            .zip(self.attributes)
+            .enumerate()
+            .min_by_key(|&(_, (roll, attribute))| attribute.missing_skill_points_unbounded(roll))
+            .unwrap()
+            .0;
+
+        self.fixed_rolls[die_idx] = None;
+        self.inaptitude = false;
     }
 }
 
@@ -428,22 +460,36 @@ mod tests {
             .is_equal_to(skill_check_outcome_builder.build());
     }
 
-    #[rstest]
-    #[case::first_roll_missing([None, Some(roll(1)), Some(roll(2))])]
-    #[case::second_roll_missing([Some(roll(3)), None, Some(roll(4))])]
-    #[case::third_roll_missing([Some(roll(3)), Some(roll(4)), None])]
-    #[case::all_rolls_missing([None, None, None])]
-    fn incomplete_partial_skill_check_state_as_skill_check_state_is_none(
-        #[case] rolls: [Option<Roll>; DICE_PER_SKILL_CHECK],
-    ) {
-        let partial_skill_check_state = PartialSkillCheckState {
-            attributes: [Attribute::new(10), Attribute::new(11), Attribute::new(12)],
+    fn partial_skill_check_state_empty_no_options() -> PartialSkillCheckState {
+        PartialSkillCheckState {
+            attributes: [Attribute::new(10), Attribute::new(10), Attribute::new(10)],
             roll_caps: [None; DICE_PER_SKILL_CHECK],
-            fixed_rolls: rolls,
+            fixed_rolls: [None; DICE_PER_SKILL_CHECK],
             skill_value: SkillPoints::new(12),
             extra_quality_levels_on_success: None,
             extra_skill_points_on_success: SkillPoints::new(0),
             modifiers: ModifierState::default(),
+            inaptitude: false,
+        }
+    }
+
+    #[rstest]
+    #[case::first_roll_missing([None, Some(roll(1)), Some(roll(2))], false)]
+    #[case::second_roll_missing([Some(roll(3)), None, Some(roll(4))], false)]
+    #[case::third_roll_missing([Some(roll(3)), Some(roll(4)), None], false)]
+    #[case::all_rolls_missing([None, None, None], false)]
+    #[case::inaptitude([Some(roll(1)), Some(roll(2)), Some(roll(3))], true)]
+    #[case::inaptitude_with_missing_roll([Some(roll(1)), None, Some(roll(3))], true)]
+    fn incomplete_partial_skill_check_state_as_skill_check_state_is_none(
+        #[case] rolls: [Option<Roll>; DICE_PER_SKILL_CHECK],
+        #[case] inaptitude: bool,
+    ) {
+        let partial_skill_check_state = PartialSkillCheckState {
+            attributes: [Attribute::new(10), Attribute::new(11), Attribute::new(12)],
+            fixed_rolls: rolls,
+            skill_value: SkillPoints::new(12),
+            inaptitude,
+            ..partial_skill_check_state_empty_no_options()
         };
 
         assert_that!(partial_skill_check_state.as_skill_check_state()).is_none();
@@ -458,12 +504,12 @@ mod tests {
         let extra_skill_points_on_success = SkillPoints::new(3);
         let partial_skill_check_state = PartialSkillCheckState {
             attributes,
-            roll_caps: [None; DICE_PER_SKILL_CHECK],
             fixed_rolls: [Some(roll(7)), Some(roll(8)), Some(roll(9))],
             skill_value,
             extra_quality_levels_on_success,
             extra_skill_points_on_success,
             modifiers: modifiers.clone(),
+            ..partial_skill_check_state_empty_no_options()
         };
 
         assert_that!(partial_skill_check_state.as_skill_check_state()).contains(SkillCheckState {
@@ -474,6 +520,76 @@ mod tests {
             extra_skill_points_on_success,
             modifiers,
         });
+    }
+
+    #[test]
+    fn apply_inaptitude_panics_if_no_inaptitude_is_required() {
+        let mut partial_skill_check_state = PartialSkillCheckState {
+            inaptitude: false,
+            ..partial_skill_check_state_empty_no_options()
+        };
+
+        assert_that!(move || partial_skill_check_state.apply_inaptitude())
+            .panics_with_message("cannot apply inaptitude: no inaptitude required");
+    }
+
+    #[rstest]
+    #[case([None, None, None])]
+    #[case([None, Some(roll(1)), Some(roll(2))])]
+    #[case([Some(roll(1)), None, Some(roll(2))])]
+    #[case([Some(roll(1)), Some(roll(2)), None])]
+    fn apply_inaptitude_panics_if_fixed_rolls_are_incomplete(
+        #[case] fixed_rolls: [Option<Roll>; DICE_PER_SKILL_CHECK],
+    ) {
+        let mut partial_skill_check_state = PartialSkillCheckState {
+            inaptitude: true,
+            fixed_rolls,
+            ..partial_skill_check_state_empty_no_options()
+        };
+
+        assert_that!(move || partial_skill_check_state.apply_inaptitude())
+            .panics_with_message("cannot apply inaptitude: incomplete rolls");
+    }
+
+    #[rstest]
+    #[case::first_die([5, 11, 12], [10, 13, 14], [None, Some(11), Some(12)])]
+    #[case::second_die([16, 11, 17], [13, 10, 14], [Some(16), None, Some(17)])]
+    #[case::third_die([12, 13, 13], [10, 13, 14], [Some(12), Some(13), None])]
+    #[case::two_way_tie([11, 14, 13], [10, 14, 13], [Some(11), None, Some(13)])]
+    #[case::three_way_tie_below_attributes([11, 10, 12], [12, 11, 13], [None, Some(10), Some(12)])]
+    #[case::three_way_tie_above_attributes([13, 12, 14], [12, 11, 13], [None, Some(12), Some(14)])]
+    fn apply_inaptitude_works(
+        #[case] rolls: [u8; DICE_PER_SKILL_CHECK],
+        #[case] attributes: [i32; DICE_PER_SKILL_CHECK],
+        #[case] expected: [Option<u8>; DICE_PER_SKILL_CHECK],
+    ) {
+        let fixed_rolls = [
+            Some(roll(rolls[0])),
+            Some(roll(rolls[1])),
+            Some(roll(rolls[2])),
+        ];
+        let attributes = [
+            Attribute::new(attributes[0]),
+            Attribute::new(attributes[1]),
+            Attribute::new(attributes[2]),
+        ];
+        let mut state = PartialSkillCheckState {
+            fixed_rolls,
+            attributes,
+            inaptitude: true,
+            ..partial_skill_check_state_empty_no_options()
+        };
+
+        state.apply_inaptitude();
+
+        let expected_fixed_rolls = [
+            expected[0].map(roll),
+            expected[1].map(roll),
+            expected[2].map(roll),
+        ];
+
+        assert_that!(state.fixed_rolls).is_equal_to(expected_fixed_rolls);
+        assert_that!(state.inaptitude).is_false();
     }
 
     fn skill_check_state_success_no_options() -> SkillCheckState {

@@ -46,6 +46,10 @@ impl<EvaluatorT: SkillCheckEvaluator> SkillCheckEngine for VarnheimerHolzfischEn
             return self.evaluate(state);
         }
 
+        if state.inaptitude && state.fixed_rolls.iter().all(Option::is_some) {
+            state.apply_inaptitude();
+        }
+
         let first_unrolled_idx = state
             .fixed_rolls
             .iter_mut()

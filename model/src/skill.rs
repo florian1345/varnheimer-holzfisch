@@ -147,8 +147,16 @@ impl Attribute {
         Attribute(value)
     }
 
+    /// Returns the number of skill points consumed by balancing the given roll against this
+    /// attribute _without_ enforcing a lower bound of 0 skill points. If the roll is lower than the
+    /// attribute, a corresponding negative value is returned.
+    pub fn missing_skill_points_unbounded(self, roll: Roll) -> SkillPoints {
+        SkillPoints(roll.as_u8() as i32 - self.0)
+    }
+
     pub fn missing_skill_points(self, roll: Roll) -> SkillPoints {
-        SkillPoints((roll.as_u8() as i32 - self.0).max(0))
+        self.missing_skill_points_unbounded(roll)
+            .max(SkillPoints::new(0))
     }
 }
 
@@ -275,9 +283,26 @@ mod tests {
     }
 
     #[rstest]
+    #[case::equal(5, 5, 0)]
+    #[case::greater(15, 14, -1)]
+    #[case::smaller(14, 15, 1)]
+    #[case::negative_attribute(-3, 1, 4)]
+    fn attribute_missing_skill_points_unbounded(
+        #[case] attribute: i32,
+        #[case] roll: u8,
+        #[case] expected: i32,
+    ) {
+        let attribute = Attribute::new(attribute);
+        let roll = Roll::new(roll).unwrap();
+
+        assert_that!(attribute.missing_skill_points_unbounded(roll))
+            .is_equal_to(SkillPoints::new(expected));
+    }
+
+    #[rstest]
     #[case::equal(5, 5)]
     #[case::attribute_slightly_greater(15, 14)]
-    #[case::attribute_much(25, 1)]
+    #[case::attribute_much_greater(25, 1)]
     fn attribute_missing_skill_points_if_greater_or_equal_roll_is_zero(
         #[case] attribute: i32,
         #[case] roll: u8,

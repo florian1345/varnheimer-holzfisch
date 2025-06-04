@@ -114,6 +114,7 @@ fn simple_call_with_zero_skill_points() {
         extra_quality_levels_on_success: None,
         extra_skill_points_on_success: SkillPoints::new(0),
         modifiers: ModifierState::default(),
+        inaptitude: false,
     });
 
     let success_probability = prob((1000.0 - 28.0) / 8000.0);
@@ -139,6 +140,75 @@ fn simple_call_with_zero_skill_points() {
     let expected_evaluation = success_eval * success_probability
         + critical_success_eval * critical_success_probability
         + spectacular_success_eval * spectacular_success_probability;
+
+    assert_that!(evaluated.evaluation).is_close_to(expected_evaluation, EPS);
+    assert_that!(evaluated.evaluated).is_close_to(expected_probs, EPS);
+}
+
+#[test]
+fn inaptitude_with_zero_skill_points() {
+    // Attribute values 10, 10, 10 Skill value 0
+    // Spectacular Success:
+    //   requires 4x 1 (20^-4 = 1 / 160k)
+    // Critical Success:
+    //   requires 3x 1 and 1x non-1 (4 * 19 / 160k = 76 / 160k)
+    // Success:
+    //   requires 4x <=10 and not 3x 1 and 1x 2-10
+    //   2^-4 - (4 * 9 + 1) / 160k = 10000 / 160k - 37 / 160k = 9963 / 160k
+    // Spectacular Failure:
+    //   requires 4x20 or 2x 20 and 1x non-20 and then 1x 20 ((3 * 19 + 1) / 160k = 58 / 160k)
+    // Critical Failure:
+    //   requires 2x 20 and 2x non-20 or 3x 20 and then 1x non-20
+    //   (19 + 6 * 19 * 19) / 160k = 2185 / 160k
+    // Failure
+    //   the rest: (160k - 1 - 76 - 9963 - 77 - 2166) / 160k = 147717 / 160k
+
+    let mut engine = VarnheimerHolzfischEngine {
+        evaluator: QualityLevelEvaluator::default(),
+    };
+
+    let evaluated = engine.evaluate_partial(PartialSkillCheckState {
+        attributes: [Attribute::new(10), Attribute::new(10), Attribute::new(10)],
+        roll_caps: [None, None, None],
+        fixed_rolls: [None, None, None],
+        skill_value: SkillPoints::new(0),
+        extra_quality_levels_on_success: None,
+        extra_skill_points_on_success: SkillPoints::new(0),
+        modifiers: ModifierState::default(),
+        inaptitude: true,
+    });
+
+    let success_probability = prob(9_963.0 / 160_000.0);
+    let critical_success_probability = prob(76.0 / 160_000.0);
+    let spectacular_success_probability = prob(1.0 / 160_000.0);
+    let expected_probs = SkillCheckOutcomeProbabilities::from([
+        (
+            outcome_no_fate_points(SkillCheckOutcomeKind::SpectacularFailure),
+            prob(58.0 / 160_000.0),
+        ),
+        (
+            outcome_no_fate_points(SkillCheckOutcomeKind::CriticalFailure),
+            prob(2_185.0 / 160_000.0),
+        ),
+        (
+            outcome_no_fate_points(SkillCheckOutcomeKind::Failure),
+            prob(147_717.0 / 160_000.0),
+        ),
+        (
+            outcome_no_fate_points(SkillCheckOutcomeKind::Success(QualityLevel::ONE)),
+            success_probability,
+        ),
+        (
+            outcome_no_fate_points(SkillCheckOutcomeKind::CriticalSuccess(QualityLevel::ONE)),
+            critical_success_probability,
+        ),
+        (
+            outcome_no_fate_points(SkillCheckOutcomeKind::SpectacularSuccess(QualityLevel::ONE)),
+            spectacular_success_probability,
+        ),
+    ]);
+    let expected_evaluation = Evaluation::new(1.0).unwrap()
+        * (success_probability + critical_success_probability + spectacular_success_probability);
 
     assert_that!(evaluated.evaluation).is_close_to(expected_evaluation, EPS);
     assert_that!(evaluated.evaluated).is_close_to(expected_probs, EPS);
