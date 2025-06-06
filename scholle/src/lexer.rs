@@ -39,6 +39,7 @@ pub enum TokenKind {
     LessEqual,
     Greater,
     GreaterEqual,
+    EndOfCode,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -227,6 +228,14 @@ pub fn lex(code: &str) -> LexerResult<Vec<Token>> {
         }
     }
 
+    tokens.push(Token {
+        kind: TokenKind::EndOfCode,
+        span: CodeSpan {
+            start_byte: code.len(),
+            end_byte: code.len(),
+        },
+    });
+
     Ok(tokens)
 }
 
@@ -248,6 +257,10 @@ mod tests {
         }
     }
 
+    fn end_of_code(len: usize) -> Token {
+        token(TokenKind::EndOfCode, len, len)
+    }
+
     #[rstest]
     #[case("_")]
     #[case("_123")]
@@ -258,11 +271,10 @@ mod tests {
     fn identifiers(#[case] text: &str) {
         let tokens = lex(text).unwrap();
 
-        assert_that!(tokens).contains_exactly_in_given_order([token(
-            TokenKind::Identifier(text.to_owned()),
-            0,
-            text.len(),
-        )]);
+        assert_that!(tokens).contains_exactly_in_given_order([
+            token(TokenKind::Identifier(text.to_owned()), 0, text.len()),
+            end_of_code(text.len()),
+        ]);
     }
 
     #[rstest]
@@ -279,7 +291,10 @@ mod tests {
     fn keywords(#[case] text: &str, #[case] expected_kind: TokenKind) {
         let tokens = lex(text).unwrap();
 
-        assert_that!(tokens).contains_exactly_in_given_order([token(expected_kind, 0, text.len())]);
+        assert_that!(tokens).contains_exactly_in_given_order([
+            token(expected_kind, 0, text.len()),
+            end_of_code(text.len()),
+        ]);
     }
 
     #[test]
@@ -293,6 +308,7 @@ mod tests {
             token(TokenKind::Identifier("se".to_owned()), 4, 6),
             token(TokenKind::Identifier("flo".to_owned()), 7, 10),
             token(TokenKind::Identifier("at".to_owned()), 13, 15),
+            end_of_code(16),
         ]);
     }
 
@@ -314,6 +330,7 @@ mod tests {
             token(TokenKind::And, 8, 9),
             token(TokenKind::Or, 9, 10),
             token(TokenKind::Xor, 10, 11),
+            end_of_code(11),
         ]);
     }
 
@@ -326,7 +343,8 @@ mod tests {
     fn double_character_tokens_joined(#[case] code: &str, #[case] expected_kind: TokenKind) {
         let tokens = lex(code).unwrap();
 
-        assert_that!(tokens).contains_exactly_in_given_order([token(expected_kind, 0, 2)]);
+        assert_that!(tokens)
+            .contains_exactly_in_given_order([token(expected_kind, 0, 2), end_of_code(2)]);
     }
 
     #[rstest]
@@ -345,6 +363,7 @@ mod tests {
         assert_that!(tokens).contains_exactly_in_given_order([
             token(expected_first_kind, 0, 1),
             token(expected_second_kind, 2, 3),
+            end_of_code(3),
         ]);
     }
 
@@ -357,11 +376,10 @@ mod tests {
     fn integer_literals(#[case] code: &str, #[case] expected_value: i64) {
         let tokens = lex(code).unwrap();
 
-        assert_that!(tokens).contains_exactly_in_given_order([token(
-            TokenKind::IntLiteral(expected_value),
-            0,
-            code.len(),
-        )]);
+        assert_that!(tokens).contains_exactly_in_given_order([
+            token(TokenKind::IntLiteral(expected_value), 0, code.len()),
+            end_of_code(code.len()),
+        ]);
     }
 
     #[test]
@@ -371,6 +389,7 @@ mod tests {
         assert_that!(tokens).contains_exactly_in_given_order([
             token(TokenKind::IntLiteral(123), 0, 3),
             token(TokenKind::IntLiteral(456), 4, 7),
+            end_of_code(7),
         ]);
     }
 
@@ -383,11 +402,10 @@ mod tests {
     fn float_literals(#[case] code: &str, #[case] expected_value: f64) {
         let tokens = lex(code).unwrap();
 
-        assert_that!(tokens).contains_exactly_in_given_order([token(
-            TokenKind::FloatLiteral(expected_value),
-            0,
-            code.len(),
-        )]);
+        assert_that!(tokens).contains_exactly_in_given_order([
+            token(TokenKind::FloatLiteral(expected_value), 0, code.len()),
+            end_of_code(code.len()),
+        ]);
     }
 
     #[test]
@@ -397,6 +415,7 @@ mod tests {
         assert_that!(tokens).contains_exactly_in_given_order([
             token(TokenKind::FloatLiteral(123.0), 0, 4),
             token(TokenKind::IntLiteral(456), 5, 8),
+            end_of_code(8),
         ]);
     }
 
@@ -412,6 +431,7 @@ mod tests {
             token(TokenKind::IntLiteral(123), 8, 11),
             token(TokenKind::Subtraction, 11, 12),
             token(TokenKind::IntLiteral(456), 12, 15),
+            end_of_code(15),
         ]);
     }
 
