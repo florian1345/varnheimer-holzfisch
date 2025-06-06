@@ -68,7 +68,7 @@ impl SkillCheckOutcomeProbabilities {
     }
 
     pub fn probability_of_outcome(&self, outcome: &SkillCheckOutcome) -> Probability {
-        self.map.get(&outcome).cloned().unwrap_or(Probability::ZERO)
+        self.map.get(outcome).cloned().unwrap_or(Probability::ZERO)
     }
 
     pub fn saturating_add_assign(&mut self, other: &SkillCheckOutcomeProbabilities) {
