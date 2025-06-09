@@ -1,5 +1,6 @@
 use thiserror::Error;
 
+use crate::lexer::Token;
 use crate::span::CodeSpan;
 
 #[derive(Debug, Error, PartialEq)]
@@ -18,3 +19,12 @@ pub struct LexerError {
 }
 
 pub type LexerResult<T> = Result<T, LexerError>;
+
+#[derive(Debug, Error, PartialEq)]
+pub enum ParseError {
+    // TODO list of expected tokens?
+    #[error("unexpected token: {0}")]
+    UnexpectedToken(Token),
+}
+
+pub type ParseResult<T> = Result<T, ParseError>;

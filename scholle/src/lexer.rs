@@ -1,3 +1,4 @@
+use std::fmt::{self, Display, Formatter};
 use std::str::CharIndices;
 
 use crate::error::{LexerError, LexerErrorKind, LexerResult};
@@ -42,10 +43,58 @@ pub enum TokenKind {
     EndOfCode,
 }
 
+impl Display for TokenKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            TokenKind::Identifier(identifier) => write!(f, "{}", identifier),
+            TokenKind::IntLiteral(value) => write!(f, "{}", value),
+            TokenKind::FloatLiteral(value) => write!(f, "{}", value),
+            TokenKind::True => write!(f, "true"),
+            TokenKind::False => write!(f, "false"),
+            TokenKind::If => write!(f, "if"),
+            TokenKind::Then => write!(f, "then"),
+            TokenKind::Else => write!(f, "else"),
+            TokenKind::Let => write!(f, "let"),
+            TokenKind::In => write!(f, "in"),
+            TokenKind::Int => write!(f, "int"),
+            TokenKind::Float => write!(f, "float"),
+            TokenKind::Bool => write!(f, "bool"),
+            TokenKind::LeftParenthesis => write!(f, "("),
+            TokenKind::RightParenthesis => write!(f, ")"),
+            TokenKind::Comma => write!(f, ","),
+            TokenKind::Colon => write!(f, ":"),
+            TokenKind::Assign => write!(f, "="),
+            TokenKind::Arrow => write!(f, "->"),
+            TokenKind::Addition => write!(f, "+"),
+            TokenKind::Subtraction => write!(f, "-"),
+            TokenKind::Multiplication => write!(f, "*"),
+            TokenKind::Division => write!(f, "/"),
+            TokenKind::Modulo => write!(f, "%"),
+            TokenKind::Not => write!(f, "!"),
+            TokenKind::And => write!(f, "&"),
+            TokenKind::Or => write!(f, "|"),
+            TokenKind::Xor => write!(f, "^"),
+            TokenKind::Equal => write!(f, "=="),
+            TokenKind::NotEqual => write!(f, "!="),
+            TokenKind::Less => write!(f, "<"),
+            TokenKind::LessEqual => write!(f, "<="),
+            TokenKind::Greater => write!(f, ">"),
+            TokenKind::GreaterEqual => write!(f, ">="),
+            TokenKind::EndOfCode => write!(f, "<end of code>"),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Token {
     pub kind: TokenKind,
     pub span: CodeSpan,
+}
+
+impl Display for Token {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{} @ {}", self.kind, self.span)
+    }
 }
 
 struct PeekableCharIndices<'a> {
@@ -241,24 +290,27 @@ pub fn lex(code: &str) -> LexerResult<Vec<Token>> {
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Range;
 
     use kernal::prelude::*;
     use rstest::rstest;
 
     use super::*;
 
-    fn token(kind: TokenKind, start_byte: usize, end_byte: usize) -> Token {
-        Token {
-            kind,
-            span: CodeSpan {
-                start_byte,
-                end_byte,
-            },
+    impl TokenKind {
+        pub(crate) fn at(self, span_range: Range<usize>) -> Token {
+            Token {
+                kind: self,
+                span: CodeSpan {
+                    start_byte: span_range.start,
+                    end_byte: span_range.end,
+                },
+            }
         }
     }
 
     fn end_of_code(len: usize) -> Token {
-        token(TokenKind::EndOfCode, len, len)
+        TokenKind::EndOfCode.at(len..len)
     }
 
     #[rstest]
@@ -272,7 +324,7 @@ mod tests {
         let tokens = lex(text).unwrap();
 
         assert_that!(tokens).contains_exactly_in_given_order([
-            token(TokenKind::Identifier(text.to_owned()), 0, text.len()),
+            TokenKind::Identifier(text.to_owned()).at(0..text.len()),
             end_of_code(text.len()),
         ]);
     }
@@ -292,7 +344,7 @@ mod tests {
         let tokens = lex(text).unwrap();
 
         assert_that!(tokens).contains_exactly_in_given_order([
-            token(expected_kind, 0, text.len()),
+            expected_kind.at(0..text.len()),
             end_of_code(text.len()),
         ]);
     }
@@ -304,10 +356,10 @@ mod tests {
         let tokens = lex(code).unwrap();
 
         assert_that!(tokens).contains_exactly_in_given_order([
-            token(TokenKind::Identifier("el".to_owned()), 1, 3),
-            token(TokenKind::Identifier("se".to_owned()), 4, 6),
-            token(TokenKind::Identifier("flo".to_owned()), 7, 10),
-            token(TokenKind::Identifier("at".to_owned()), 13, 15),
+            TokenKind::Identifier("el".to_owned()).at(1..3),
+            TokenKind::Identifier("se".to_owned()).at(4..6),
+            TokenKind::Identifier("flo".to_owned()).at(7..10),
+            TokenKind::Identifier("at".to_owned()).at(13..15),
             end_of_code(16),
         ]);
     }
@@ -319,17 +371,17 @@ mod tests {
         let tokens = lex(code).unwrap();
 
         assert_that!(tokens).contains_exactly_in_given_order([
-            token(TokenKind::LeftParenthesis, 0, 1),
-            token(TokenKind::RightParenthesis, 1, 2),
-            token(TokenKind::Comma, 2, 3),
-            token(TokenKind::Colon, 3, 4),
-            token(TokenKind::Addition, 4, 5),
-            token(TokenKind::Multiplication, 5, 6),
-            token(TokenKind::Division, 6, 7),
-            token(TokenKind::Modulo, 7, 8),
-            token(TokenKind::And, 8, 9),
-            token(TokenKind::Or, 9, 10),
-            token(TokenKind::Xor, 10, 11),
+            TokenKind::LeftParenthesis.at(0..1),
+            TokenKind::RightParenthesis.at(1..2),
+            TokenKind::Comma.at(2..3),
+            TokenKind::Colon.at(3..4),
+            TokenKind::Addition.at(4..5),
+            TokenKind::Multiplication.at(5..6),
+            TokenKind::Division.at(6..7),
+            TokenKind::Modulo.at(7..8),
+            TokenKind::And.at(8..9),
+            TokenKind::Or.at(9..10),
+            TokenKind::Xor.at(10..11),
             end_of_code(11),
         ]);
     }
@@ -344,7 +396,7 @@ mod tests {
         let tokens = lex(code).unwrap();
 
         assert_that!(tokens)
-            .contains_exactly_in_given_order([token(expected_kind, 0, 2), end_of_code(2)]);
+            .contains_exactly_in_given_order([expected_kind.at(0..2), end_of_code(2)]);
     }
 
     #[rstest]
@@ -361,8 +413,8 @@ mod tests {
         let tokens = lex(code).unwrap();
 
         assert_that!(tokens).contains_exactly_in_given_order([
-            token(expected_first_kind, 0, 1),
-            token(expected_second_kind, 2, 3),
+            expected_first_kind.at(0..1),
+            expected_second_kind.at(2..3),
             end_of_code(3),
         ]);
     }
@@ -377,7 +429,7 @@ mod tests {
         let tokens = lex(code).unwrap();
 
         assert_that!(tokens).contains_exactly_in_given_order([
-            token(TokenKind::IntLiteral(expected_value), 0, code.len()),
+            TokenKind::IntLiteral(expected_value).at(0..code.len()),
             end_of_code(code.len()),
         ]);
     }
@@ -387,8 +439,8 @@ mod tests {
         let tokens = lex("123 456").unwrap();
 
         assert_that!(tokens).contains_exactly_in_given_order([
-            token(TokenKind::IntLiteral(123), 0, 3),
-            token(TokenKind::IntLiteral(456), 4, 7),
+            TokenKind::IntLiteral(123).at(0..3),
+            TokenKind::IntLiteral(456).at(4..7),
             end_of_code(7),
         ]);
     }
@@ -403,7 +455,7 @@ mod tests {
         let tokens = lex(code).unwrap();
 
         assert_that!(tokens).contains_exactly_in_given_order([
-            token(TokenKind::FloatLiteral(expected_value), 0, code.len()),
+            TokenKind::FloatLiteral(expected_value).at(0..code.len()),
             end_of_code(code.len()),
         ]);
     }
@@ -413,8 +465,8 @@ mod tests {
         let tokens = lex("123. 456").unwrap();
 
         assert_that!(tokens).contains_exactly_in_given_order([
-            token(TokenKind::FloatLiteral(123.0), 0, 4),
-            token(TokenKind::IntLiteral(456), 5, 8),
+            TokenKind::FloatLiteral(123.0).at(0..4),
+            TokenKind::IntLiteral(456).at(5..8),
             end_of_code(8),
         ]);
     }
@@ -424,13 +476,13 @@ mod tests {
         let tokens = lex("abc=def+123-456").unwrap();
 
         assert_that!(tokens).contains_exactly_in_given_order([
-            token(TokenKind::Identifier("abc".to_owned()), 0, 3),
-            token(TokenKind::Assign, 3, 4),
-            token(TokenKind::Identifier("def".to_owned()), 4, 7),
-            token(TokenKind::Addition, 7, 8),
-            token(TokenKind::IntLiteral(123), 8, 11),
-            token(TokenKind::Subtraction, 11, 12),
-            token(TokenKind::IntLiteral(456), 12, 15),
+            TokenKind::Identifier("abc".to_owned()).at(0..3),
+            TokenKind::Assign.at(3..4),
+            TokenKind::Identifier("def".to_owned()).at(4..7),
+            TokenKind::Addition.at(7..8),
+            TokenKind::IntLiteral(123).at(8..11),
+            TokenKind::Subtraction.at(11..12),
+            TokenKind::IntLiteral(456).at(12..15),
             end_of_code(15),
         ]);
     }
