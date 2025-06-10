@@ -617,6 +617,13 @@ mod tests {
             operator: BinaryOperator::Division,
         }.at(0..9)
     )]
+    #[case::modulo("x % 2",
+        BinaryOperation {
+            lhs: Reference("x".to_owned()).at_boxed(0..1),
+            rhs: IntLiteral(2).at_boxed(4..5),
+            operator: BinaryOperator::Modulo,
+        }.at(0..5)
+    )]
     #[case::multiplication_and_division_left_to_right("a * b / c * d",
         BinaryOperation {
             lhs: BinaryOperation {
