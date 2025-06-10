@@ -331,7 +331,7 @@ impl<IterT: Iterator<Item = Token>> Parser<IterT> {
                 let next_token_kind = &self.peek().kind;
                 let is_lambda = next_token_kind == &TokenKind::RightParenthesis
                     || matches!(next_token_kind, TokenKind::Identifier(_))
-                        && &self.lookahead(1).kind == &TokenKind::Colon;
+                        && self.lookahead(1).kind == TokenKind::Colon;
 
                 if is_lambda {
                     let (parameters, _) =
