@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 
 use crate::error::{ParseError, ParseResult};
 use crate::lexer::{Token, TokenKind};
+use crate::operators::{BinaryOperator, UnaryOperator};
 use crate::span::CodeSpan;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -33,30 +34,6 @@ pub struct Parameter {
     pub identifier: String,
     pub typ: Type,
     pub span: CodeSpan,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum UnaryOperator {
-    Not,
-    Negative,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum BinaryOperator {
-    Addition,
-    Subtraction,
-    Multiplication,
-    Division,
-    Modulo,
-    And,
-    Or,
-    Xor,
-    Equal,
-    NotEqual,
-    Less,
-    LessEqual,
-    Greater,
-    GreaterEqual,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -534,18 +511,11 @@ mod tests {
     use super::*;
     use crate::lexer;
 
-    fn span(span: Range<usize>) -> CodeSpan {
-        CodeSpan {
-            start_byte: span.start,
-            end_byte: span.end,
-        }
-    }
-
     impl ExpressionKind {
         fn at(self, span_range: Range<usize>) -> Expression {
             Expression {
                 kind: self,
-                span: span(span_range),
+                span: span_range.into(),
             }
         }
 
@@ -558,7 +528,7 @@ mod tests {
         fn at(self, span_range: Range<usize>) -> Type {
             Type {
                 kind: self,
-                span: span(span_range),
+                span: span_range.into(),
             }
         }
 
@@ -938,7 +908,7 @@ mod tests {
                 Assignment {
                     identifier: "x".to_owned(),
                     value: IntLiteral(5).at(8..9),
-                    span: span(4..9),
+                    span: (4..9).into(),
                 },
             ],
             body: Reference("x".to_owned()).at_boxed(13..14),
@@ -950,7 +920,7 @@ mod tests {
                 Assignment {
                     identifier: "x".to_owned(),
                     value: IntLiteral(3).at(8..9),
-                    span: span(4..9),
+                    span: (4..9).into(),
                 },
                 Assignment {
                     identifier: "y".to_owned(),
@@ -959,7 +929,7 @@ mod tests {
                         rhs: Reference("x".to_owned()).at_boxed(19..20),
                         operator: BinaryOperator::Multiplication,
                     }.at(15..20),
-                    span: span(11..20),
+                    span: (11..20).into(),
                 },
             ],
             body: Reference("y".to_owned()).at_boxed(24..25),
@@ -977,7 +947,7 @@ mod tests {
                 Parameter {
                     identifier: "x".to_owned(),
                     typ: Integer.at(4..7),
-                    span: span(1..7),
+                    span: (1..7).into(),
                 }
             ],
             body: BinaryOperation {
@@ -994,12 +964,12 @@ mod tests {
                 Parameter {
                     identifier: "double".to_owned(),
                     typ: Bool.at(9..13),
-                    span: span(1..13),
+                    span: (1..13).into(),
                 },
                 Parameter {
                     identifier: "x".to_owned(),
                     typ: Float.at(18..23),
-                    span: span(15..23),
+                    span: (15..23).into(),
                 }
             ],
             body: If {
@@ -1022,7 +992,7 @@ mod tests {
                         parameter_types: vec![Integer.at(5..8)],
                         return_type: Integer.at_boxed(13..16),
                     }.at(4..16),
-                    span: span(1..16),
+                    span: (1..16).into(),
                 },
             ],
             body: Call {
@@ -1037,7 +1007,7 @@ mod tests {
                 Parameter {
                     identifier: "factor".to_owned(),
                     typ: Float.at(9..14),
-                    span: span(1..14),
+                    span: (1..14).into(),
                 }
             ],
             body: Lambda {
@@ -1045,7 +1015,7 @@ mod tests {
                     Parameter {
                         identifier: "x".to_owned(),
                         typ: Float.at(23..28),
-                        span: span(20..28),
+                        span: (20..28).into(),
                     }
                 ],
                 body: BinaryOperation {
@@ -1068,7 +1038,7 @@ mod tests {
                         ],
                         return_type: Integer.at_boxed(19..22),
                     }.at(4..22),
-                    span: span(1..22),
+                    span: (1..22).into(),
                 }
             ],
             body: Call {
@@ -1094,7 +1064,7 @@ mod tests {
                         ],
                         return_type: Integer.at_boxed(22..25),
                     }.at(4..25),
-                    span: span(1..25),
+                    span: (1..25).into(),
                 },
             ],
             body: Call {
@@ -1105,7 +1075,7 @@ mod tests {
                             Parameter {
                                 identifier: "x".to_owned(),
                                 typ: Integer.at(36..39),
-                                span: span(33..39),
+                                span: (33..39).into(),
                             }
                         ],
                         body: Reference("x".to_owned()).at_boxed(44..45),
@@ -1126,7 +1096,7 @@ mod tests {
                             return_type: Integer.at_boxed(16..19),
                         }.at_boxed(10..19),
                     }.at(4..19),
-                    span: span(1..19),
+                    span: (1..19).into(),
                 }
             ],
             body: Call {

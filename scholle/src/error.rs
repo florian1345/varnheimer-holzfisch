@@ -1,5 +1,10 @@
+use std::fmt;
+use std::fmt::Display;
+
+use fmt::Formatter;
 use thiserror::Error;
 
+use crate::context::Type;
 use crate::lexer::Token;
 use crate::span::CodeSpan;
 
@@ -27,4 +32,56 @@ pub enum ParseError {
     UnexpectedToken(Token),
 }
 
+#[derive(Debug, PartialEq)]
+pub enum ExpectedType {
+    Type(Type),
+    AnyFunction,
+}
+
+impl Display for ExpectedType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            ExpectedType::Type(typ) => write!(f, "{}", typ),
+            ExpectedType::AnyFunction => write!(f, "<function>"),
+        }
+    }
+}
+
+impl From<Type> for ExpectedType {
+    fn from(typ: Type) -> ExpectedType {
+        ExpectedType::Type(typ)
+    }
+}
+
 pub type ParseResult<T> = Result<T, ParseError>;
+
+#[derive(Debug, Error, PartialEq)]
+pub enum ContextError {
+    #[error("unresolved reference '{identifier}' @ {span}")]
+    UnresolvedReference { identifier: String, span: CodeSpan },
+
+    #[error("type error @ {span}: received {actual_type}, expected [ {expected_type_list} ]",
+        expected_type_list = .expected_types.iter()
+            .map(|expected_type| format!("{}", expected_type))
+            .collect::<Vec<_>>()
+            .join(", ")
+    )]
+    TypeError {
+        actual_type: Type,
+        expected_types: Vec<ExpectedType>,
+        span: CodeSpan,
+    },
+
+    #[error(
+        "function of type {callee_type} requires {parameter_count} arguments, but received \
+            {argument_count} @ {span}"
+    )]
+    CardinalityError {
+        callee_type: Type,
+        parameter_count: usize,
+        argument_count: usize,
+        span: CodeSpan,
+    },
+}
+
+pub type ContextResult<T> = Result<T, ContextError>;

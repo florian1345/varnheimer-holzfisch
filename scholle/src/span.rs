@@ -1,5 +1,6 @@
 use std::fmt;
 use std::fmt::{Display, Formatter};
+use std::ops::Range;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct CodeSpan {
@@ -22,6 +23,15 @@ impl Display for CodeSpan {
     }
 }
 
+impl From<Range<usize>> for CodeSpan {
+    fn from(value: Range<usize>) -> CodeSpan {
+        CodeSpan {
+            start_byte: value.start,
+            end_byte: value.end,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::ops::Range;
@@ -40,18 +50,9 @@ mod tests {
         #[case] span_2: Range<usize>,
         #[case] expected: Range<usize>,
     ) {
-        let code_span_1 = CodeSpan {
-            start_byte: span_1.start,
-            end_byte: span_1.end,
-        };
-        let code_span_2 = CodeSpan {
-            start_byte: span_2.start,
-            end_byte: span_2.end,
-        };
-        let expected = CodeSpan {
-            start_byte: expected.start,
-            end_byte: expected.end,
-        };
+        let code_span_1 = CodeSpan::from(span_1);
+        let code_span_2 = CodeSpan::from(span_2);
+        let expected = CodeSpan::from(expected);
 
         assert_that!(code_span_1.union(code_span_2)).is_equal_to(expected);
         assert_that!(code_span_2.union(code_span_1)).is_equal_to(expected);
