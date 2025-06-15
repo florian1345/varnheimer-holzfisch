@@ -1,6 +1,3 @@
-use std::collections::HashMap;
-use std::convert::Infallible;
-
 use kernal::prelude::*;
 use model::check::modifier::{Aptitude, Modifier, ModifierAction, ModifierState, Reroll};
 use model::check::outcome::{
@@ -10,70 +7,16 @@ use model::check::outcome::{
 };
 use model::check::{PartialSkillCheckState, SkillCheckAction, SkillCheckState};
 use model::engine::VarnheimerHolzfischEngine;
-use model::evaluation::{Evaluation, SkillCheckEvaluator};
+use model::evaluation::Evaluation;
 use model::probability::Probability;
 use model::roll::Roll;
 use model::skill::{Attribute, QualityLevel, SkillPoints};
 use rstest::rstest;
+use scholle::ScholleEvaluator;
 
-struct PerOutcomeEvaluator {
-    outcomes: HashMap<SkillCheckOutcome, Evaluation>,
-}
-
-impl PerOutcomeEvaluator {
-    fn new(
-        outcomes: impl IntoIterator<Item = (SkillCheckOutcome, Evaluation)>,
-    ) -> PerOutcomeEvaluator {
-        PerOutcomeEvaluator {
-            outcomes: outcomes
-                .into_iter()
-                .map(|(outcome, evaluation)| (outcome, evaluation))
-                .collect(),
-        }
-    }
-}
-
-impl SkillCheckEvaluator for PerOutcomeEvaluator {
-    type Error = Infallible;
-
-    fn evaluate(&mut self, outcome: &SkillCheckOutcome) -> Result<Evaluation, Infallible> {
-        Ok(self
-            .outcomes
-            .get(outcome)
-            .cloned()
-            .unwrap_or(Evaluation::ZERO))
-    }
-}
-
-struct QualityLevelEvaluator {
-    eval_by_ql: HashMap<QualityLevel, Evaluation>,
-    fate_point_value: Evaluation,
-}
-
-impl Default for QualityLevelEvaluator {
-    fn default() -> QualityLevelEvaluator {
-        QualityLevelEvaluator {
-            eval_by_ql: QualityLevel::ALL
-                .into_iter()
-                .map(|ql| (ql, Evaluation::new(ql.as_u8() as f64).unwrap()))
-                .collect(),
-            fate_point_value: Default::default(),
-        }
-    }
-}
-
-impl SkillCheckEvaluator for QualityLevelEvaluator {
-    type Error = Infallible;
-    fn evaluate(&mut self, outcome: &SkillCheckOutcome) -> Result<Evaluation, Infallible> {
-        let quality_level_value = outcome
-            .quality_level()
-            .and_then(|ql| self.eval_by_ql.get(&ql).cloned())
-            .unwrap_or(Evaluation::ZERO);
-        let fate_point_value =
-            self.fate_point_value * outcome.remaining_modifiers.count_of(Modifier::FatePoint);
-
-        Ok(quality_level_value + fate_point_value)
-    }
+fn engine(scholle_code: impl AsRef<str>) -> VarnheimerHolzfischEngine<ScholleEvaluator> {
+    let evaluator = ScholleEvaluator::new(scholle_code).unwrap();
+    VarnheimerHolzfischEngine { evaluator }
 }
 
 fn prob(value: f64) -> Probability {
@@ -103,13 +46,14 @@ fn simple_call_with_zero_skill_points() {
         outcome_no_fate_points(SkillCheckOutcomeKind::CriticalSuccess(QualityLevel::ONE));
     let spectacular_success =
         outcome_no_fate_points(SkillCheckOutcomeKind::SpectacularSuccess(QualityLevel::ONE));
-    let mut engine = VarnheimerHolzfischEngine {
-        evaluator: PerOutcomeEvaluator::new([
-            (success.clone(), success_eval),
-            (critical_success.clone(), critical_success_eval),
-            (spectacular_success.clone(), spectacular_success_eval),
-        ]),
-    };
+    let mut engine = engine(format!(
+        "if is_spectacular_success then {} else \
+            if is_critical_success then {} else \
+            if is_success then {} else 0",
+        spectacular_success_eval.as_f64(),
+        critical_success_eval.as_f64(),
+        success_eval.as_f64()
+    ));
 
     let evaluated = engine
         .evaluate_partial(PartialSkillCheckState {
@@ -170,9 +114,7 @@ fn inaptitude_with_zero_skill_points() {
     // Failure
     //   the rest: (160k - 1 - 76 - 9963 - 77 - 2166) / 160k = 147717 / 160k
 
-    let mut engine = VarnheimerHolzfischEngine {
-        evaluator: QualityLevelEvaluator::default(),
-    };
+    let mut engine = engine("quality_level");
 
     let evaluated = engine
         .evaluate_partial(PartialSkillCheckState {
@@ -238,9 +180,7 @@ fn given_roll_with_fate_point_evaluates_options_correctly() {
         modifiers: ModifierState::from_modifiers([Modifier::FatePoint]),
     };
 
-    let mut engine = VarnheimerHolzfischEngine {
-        evaluator: QualityLevelEvaluator::default(),
-    };
+    let mut engine = engine("quality_level");
 
     let evaluated = engine.evaluate_all_actions(skill_check_state).unwrap();
 
@@ -284,12 +224,7 @@ fn given_roll_with_fate_point_evaluates_cost_of_fate_point_correctly() {
         modifiers: ModifierState::from_modifiers([Modifier::FatePoint]),
     };
 
-    let mut engine = VarnheimerHolzfischEngine {
-        evaluator: QualityLevelEvaluator {
-            fate_point_value: eval(1.5),
-            ..Default::default()
-        },
-    };
+    let mut engine = engine("as_float(quality_level) + 1.5 * as_float(remaining_fate_points)");
 
     let evaluated = engine.evaluate_all_actions(skill_check_state).unwrap();
 
@@ -305,17 +240,17 @@ fn given_roll_with_fate_point_evaluates_cost_of_fate_point_correctly() {
 
 #[rstest]
 #[case::max_success_probability(
-    [(QualityLevel::ONE, eval(1.0)), (QualityLevel::TWO, eval(1.0))],
+    "if is_success then 1 else 0",
     ModifierAction::RerollByAptitude(Reroll::new([true, false, false]).unwrap()),
     eval(0.75)
 )]
 #[case::max_average_ql(
-    [(QualityLevel::ONE, eval(1.0)), (QualityLevel::TWO, eval(2.0))],
+    "quality_level",
     ModifierAction::RerollByAptitude(Reroll::new([false, false, true]).unwrap()),
     eval(1.1)
 )]
 fn given_roll_with_aptitude_evaluates_options_correctly(
-    #[case] eval_by_ql: impl IntoIterator<Item = (QualityLevel, Evaluation)>,
+    #[case] scholle_code: &str,
     #[case] expected_best_action: ModifierAction,
     #[case] expected_evaluation: Evaluation,
 ) {
@@ -337,12 +272,7 @@ fn given_roll_with_aptitude_evaluates_options_correctly(
         modifiers: ModifierState::from_modifiers([aptitude_1]),
     };
 
-    let mut engine = VarnheimerHolzfischEngine {
-        evaluator: QualityLevelEvaluator {
-            eval_by_ql: eval_by_ql.into_iter().collect(),
-            ..Default::default()
-        },
-    };
+    let mut engine = engine(scholle_code);
 
     let evaluated = engine.evaluate_all_actions(skill_check_state).unwrap();
 
@@ -376,9 +306,7 @@ fn given_roll_with_aptitude_evaluates_reroll_with_cap_correctly() {
         modifiers: ModifierState::from_modifiers([aptitude_1]),
     };
 
-    let mut engine = VarnheimerHolzfischEngine {
-        evaluator: QualityLevelEvaluator::default(),
-    };
+    let mut engine = engine("quality_level");
 
     let evaluated = engine.evaluate_all_actions(skill_check_state).unwrap();
 
