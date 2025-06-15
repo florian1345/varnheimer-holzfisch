@@ -85,3 +85,21 @@ pub enum ContextError {
 }
 
 pub type ContextResult<T> = Result<T, ContextError>;
+
+#[derive(Debug, Error, PartialEq)]
+pub enum RuntimeErrorKind {
+    #[error("arithmetic operation caused overflow")]
+    ArithmeticOverflow,
+
+    #[error("division by zero")]
+    DivideByZero,
+}
+
+#[derive(Debug, Error, PartialEq)]
+#[error("{kind} @ {span}")]
+pub struct RuntimeError {
+    pub kind: RuntimeErrorKind,
+    pub span: CodeSpan,
+}
+
+pub type RuntimeResult<T> = Result<T, RuntimeError>;

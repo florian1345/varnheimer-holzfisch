@@ -2,11 +2,12 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 
+use crate::builtin::BUILTIN_COUNT;
 use crate::error::{ContextError, ContextResult, ExpectedType};
 use crate::operators::{BinaryOperator, UnaryOperator};
-use crate::parser;
 use crate::parser::TypeKind;
 use crate::span::CodeSpan;
+use crate::{builtin, parser};
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Type {
@@ -103,62 +104,6 @@ pub struct Expression {
     pub span: CodeSpan,
 }
 
-fn root_declarations() -> Vec<(&'static str, Type)> {
-    vec![
-        (
-            "as_float",
-            Type::Function {
-                parameter_types: vec![Type::Integer],
-                return_type: Box::new(Type::Float),
-            },
-        ),
-        (
-            "as_int",
-            Type::Function {
-                parameter_types: vec![Type::Float],
-                return_type: Box::new(Type::Integer),
-            },
-        ),
-        (
-            "pow",
-            Type::Function {
-                parameter_types: vec![Type::Float, Type::Float],
-                return_type: Box::new(Type::Float),
-            },
-        ),
-        ("quality_level", Type::Integer),
-        ("is_success", Type::Bool),
-        ("is_critical_success", Type::Bool),
-        ("is_spectacular_success", Type::Bool),
-        ("is_failure", Type::Bool),
-        ("is_critical_failure", Type::Bool),
-        ("is_spectacular_failure", Type::Bool),
-        ("remaining_fate_points", Type::Integer),
-        (
-            "remaining_aptitudes",
-            Type::Function {
-                parameter_types: vec![Type::Integer],
-                return_type: Box::new(Type::Integer),
-            },
-        ),
-        (
-            "remaining_extra_skill_points",
-            Type::Function {
-                parameter_types: vec![Type::Integer],
-                return_type: Box::new(Type::Integer),
-            },
-        ),
-        (
-            "remaining_extra_skill_points_on_success",
-            Type::Function {
-                parameter_types: vec![Type::Integer],
-                return_type: Box::new(Type::Integer),
-            },
-        ),
-        ("remaining_extra_quality_levels_on_success", Type::Integer),
-    ]
-}
-
 struct DeclarationContext {
     types: HashMap<DeclarationId, Type>,
     frames: Vec<HashMap<String, DeclarationId>>,
@@ -170,11 +115,15 @@ impl DeclarationContext {
         let mut declaration_ctx = DeclarationContext {
             types: HashMap::new(),
             frames: vec![HashMap::new()],
-            declaration_id_counter: 0,
+            declaration_id_counter: BUILTIN_COUNT,
         };
 
-        for (identifier, typ) in root_declarations() {
-            declaration_ctx.enter(identifier.to_owned(), typ);
+        for builtin in builtin::context_builtins().into_iter() {
+            declaration_ctx.enter_with_id(
+                builtin.identifier.to_owned(),
+                builtin.typ,
+                builtin.declaration_id,
+            );
         }
 
         declaration_ctx
@@ -198,14 +147,18 @@ impl DeclarationContext {
         ))
     }
 
-    fn enter(&mut self, identifier: String, typ: Type) -> DeclarationId {
-        let declaration_id = self.declaration_id_counter;
-        self.declaration_id_counter += 1;
+    fn enter_with_id(&mut self, identifier: String, typ: Type, declaration_id: DeclarationId) {
         self.types.insert(declaration_id, typ);
         self.frames
             .last_mut()
             .unwrap()
             .insert(identifier, declaration_id);
+    }
+
+    fn enter(&mut self, identifier: String, typ: Type) -> DeclarationId {
+        let declaration_id = self.declaration_id_counter;
+        self.declaration_id_counter += 1;
+        self.enter_with_id(identifier, typ, declaration_id);
         declaration_id
     }
 
@@ -517,6 +470,7 @@ mod tests {
 
     use super::ExpressionKind::*;
     use super::*;
+    use crate::builtin::{BUILTIN_COUNT, context_builtins};
     use crate::lexer;
 
     impl ExpressionKind {
@@ -534,14 +488,14 @@ mod tests {
     }
 
     fn new_decl_id(offset: DeclarationId) -> DeclarationId {
-        root_declarations().len() + offset
+        BUILTIN_COUNT + offset
     }
 
     fn builtin_decl_id(identifier: &str) -> DeclarationId {
-        root_declarations()
+        context_builtins()
             .into_iter()
             .enumerate()
-            .find(|(_, (builtin_identifier, _))| builtin_identifier == &identifier)
+            .find(|(_, builtin)| builtin.identifier == identifier)
             .map(|(index, _)| index)
             .unwrap()
     }
