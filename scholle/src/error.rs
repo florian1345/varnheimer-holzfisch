@@ -87,12 +87,41 @@ pub enum ContextError {
 pub type ContextResult<T> = Result<T, ContextError>;
 
 #[derive(Debug, Error, PartialEq)]
+pub enum InitializationError {
+    #[error("{0}")]
+    Lexer(#[from] LexerError),
+    #[error("{0}")]
+    Parse(#[from] ParseError),
+    #[error("{0}")]
+    Context(#[from] ContextError),
+}
+
+pub type InitializationResult<T> = Result<T, InitializationError>;
+
+#[derive(Debug, Error)]
 pub enum RuntimeErrorKind {
     #[error("arithmetic operation caused overflow")]
     ArithmeticOverflow,
 
     #[error("division by zero")]
     DivideByZero,
+
+    #[error("invalid result: {0} (a finite number is required)")]
+    InvalidResult(f64),
+}
+
+impl PartialEq for RuntimeErrorKind {
+    fn eq(&self, other: &RuntimeErrorKind) -> bool {
+        match (self, other) {
+            (RuntimeErrorKind::ArithmeticOverflow, RuntimeErrorKind::ArithmeticOverflow) => true,
+            (RuntimeErrorKind::DivideByZero, RuntimeErrorKind::DivideByZero) => true,
+            (
+                RuntimeErrorKind::InvalidResult(self_value),
+                RuntimeErrorKind::InvalidResult(other_value),
+            ) => self_value == other_value || self_value.is_nan() && other_value.is_nan(),
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Error, PartialEq)]

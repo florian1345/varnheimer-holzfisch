@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::convert::Infallible;
 
 use kernal::prelude::*;
 use model::check::modifier::{Aptitude, Modifier, ModifierAction, ModifierState, Reroll};
@@ -33,11 +34,14 @@ impl PerOutcomeEvaluator {
 }
 
 impl SkillCheckEvaluator for PerOutcomeEvaluator {
-    fn evaluate(&mut self, outcome: &SkillCheckOutcome) -> Evaluation {
-        self.outcomes
+    type Error = Infallible;
+
+    fn evaluate(&mut self, outcome: &SkillCheckOutcome) -> Result<Evaluation, Infallible> {
+        Ok(self
+            .outcomes
             .get(outcome)
             .cloned()
-            .unwrap_or(Evaluation::ZERO)
+            .unwrap_or(Evaluation::ZERO))
     }
 }
 
@@ -59,7 +63,8 @@ impl Default for QualityLevelEvaluator {
 }
 
 impl SkillCheckEvaluator for QualityLevelEvaluator {
-    fn evaluate(&mut self, outcome: &SkillCheckOutcome) -> Evaluation {
+    type Error = Infallible;
+    fn evaluate(&mut self, outcome: &SkillCheckOutcome) -> Result<Evaluation, Infallible> {
         let quality_level_value = outcome
             .quality_level()
             .and_then(|ql| self.eval_by_ql.get(&ql).cloned())
@@ -67,7 +72,7 @@ impl SkillCheckEvaluator for QualityLevelEvaluator {
         let fate_point_value =
             self.fate_point_value * outcome.remaining_modifiers.count_of(Modifier::FatePoint);
 
-        quality_level_value + fate_point_value
+        Ok(quality_level_value + fate_point_value)
     }
 }
 
@@ -106,16 +111,18 @@ fn simple_call_with_zero_skill_points() {
         ]),
     };
 
-    let evaluated = engine.evaluate_partial(PartialSkillCheckState {
-        attributes: [Attribute::new(10), Attribute::new(10), Attribute::new(10)],
-        roll_caps: [None, None, None],
-        fixed_rolls: [None, None, None],
-        skill_value: SkillPoints::new(0),
-        extra_quality_levels_on_success: None,
-        extra_skill_points_on_success: SkillPoints::new(0),
-        modifiers: ModifierState::default(),
-        inaptitude: false,
-    });
+    let evaluated = engine
+        .evaluate_partial(PartialSkillCheckState {
+            attributes: [Attribute::new(10), Attribute::new(10), Attribute::new(10)],
+            roll_caps: [None, None, None],
+            fixed_rolls: [None, None, None],
+            skill_value: SkillPoints::new(0),
+            extra_quality_levels_on_success: None,
+            extra_skill_points_on_success: SkillPoints::new(0),
+            modifiers: ModifierState::default(),
+            inaptitude: false,
+        })
+        .unwrap();
 
     let success_probability = prob((1000.0 - 28.0) / 8000.0);
     let critical_success_probability = prob(57.0 / 8000.0);
@@ -167,16 +174,18 @@ fn inaptitude_with_zero_skill_points() {
         evaluator: QualityLevelEvaluator::default(),
     };
 
-    let evaluated = engine.evaluate_partial(PartialSkillCheckState {
-        attributes: [Attribute::new(10), Attribute::new(10), Attribute::new(10)],
-        roll_caps: [None, None, None],
-        fixed_rolls: [None, None, None],
-        skill_value: SkillPoints::new(0),
-        extra_quality_levels_on_success: None,
-        extra_skill_points_on_success: SkillPoints::new(0),
-        modifiers: ModifierState::default(),
-        inaptitude: true,
-    });
+    let evaluated = engine
+        .evaluate_partial(PartialSkillCheckState {
+            attributes: [Attribute::new(10), Attribute::new(10), Attribute::new(10)],
+            roll_caps: [None, None, None],
+            fixed_rolls: [None, None, None],
+            skill_value: SkillPoints::new(0),
+            extra_quality_levels_on_success: None,
+            extra_skill_points_on_success: SkillPoints::new(0),
+            modifiers: ModifierState::default(),
+            inaptitude: true,
+        })
+        .unwrap();
 
     let success_probability = prob(9_963.0 / 160_000.0);
     let critical_success_probability = prob(76.0 / 160_000.0);
@@ -233,7 +242,7 @@ fn given_roll_with_fate_point_evaluates_options_correctly() {
         evaluator: QualityLevelEvaluator::default(),
     };
 
-    let evaluated = engine.evaluate_all_actions(skill_check_state);
+    let evaluated = engine.evaluate_all_actions(skill_check_state).unwrap();
 
     // The best option is to reroll the 18, which yields the following QL distribution:
     // Failure: 5% (20 on reroll)
@@ -282,7 +291,7 @@ fn given_roll_with_fate_point_evaluates_cost_of_fate_point_correctly() {
         },
     };
 
-    let evaluated = engine.evaluate_all_actions(skill_check_state);
+    let evaluated = engine.evaluate_all_actions(skill_check_state).unwrap();
 
     // None of the options yields an average increase of >1.5 QL, hence accepting is best.
     // The value is the achieved QL (1) + the value of remaining fate points (1.5).
@@ -335,7 +344,7 @@ fn given_roll_with_aptitude_evaluates_options_correctly(
         },
     };
 
-    let evaluated = engine.evaluate_all_actions(skill_check_state);
+    let evaluated = engine.evaluate_all_actions(skill_check_state).unwrap();
 
     let best_move = evaluated[0].clone();
 
@@ -371,7 +380,7 @@ fn given_roll_with_aptitude_evaluates_reroll_with_cap_correctly() {
         evaluator: QualityLevelEvaluator::default(),
     };
 
-    let evaluated = engine.evaluate_all_actions(skill_check_state);
+    let evaluated = engine.evaluate_all_actions(skill_check_state).unwrap();
 
     let best_move = evaluated[0].clone();
 

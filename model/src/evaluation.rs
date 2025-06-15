@@ -11,11 +11,11 @@ impl Evaluation {
     pub const ZERO: Evaluation = Evaluation(0.0);
 
     pub const fn new(value: f64) -> Option<Evaluation> {
-        if value.is_nan() {
-            None
+        if value.is_finite() {
+            Some(Evaluation(value))
         }
         else {
-            Some(Evaluation(value))
+            None
         }
     }
 
@@ -104,7 +104,9 @@ impl<T> Evaluated<T> {
 }
 
 pub trait SkillCheckEvaluator {
-    fn evaluate(&mut self, outcome: &SkillCheckOutcome) -> Evaluation;
+    type Error;
+
+    fn evaluate(&mut self, outcome: &SkillCheckOutcome) -> Result<Evaluation, Self::Error>;
 }
 
 #[cfg(test)]
@@ -115,19 +117,22 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn new_evaluation_with_nan_is_none() {
-        let evaluation = Evaluation::new(f64::NAN);
+    #[rstest]
+    #[case::neg_infinity(f64::NEG_INFINITY)]
+    #[case::infininty(f64::INFINITY)]
+    #[case::nan(f64::NAN)]
+    fn new_evaluation_with_non_finite_is_none(#[case] value: f64) {
+        let evaluation = Evaluation::new(value);
 
         assert_that!(evaluation).is_none();
     }
 
     #[rstest]
-    #[case::neg_infinity(f64::NEG_INFINITY)]
+    #[case::max(f64::MIN)]
     #[case::negative(-123.456)]
     #[case::zero(0.0)]
     #[case::positive(123.456)]
-    #[case::infininty(f64::INFINITY)]
+    #[case::max(f64::MAX)]
     fn new_evaluation_with_non_nan_is_some(#[case] value: f64) {
         let evaluation = Evaluation::new(value);
 
