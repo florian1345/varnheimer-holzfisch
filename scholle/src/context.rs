@@ -1119,6 +1119,33 @@ mod tests {
         28..29,
     )]
     #[case::call_invalid_argument_type("pow(1.0, 2)", Type::Integer, [Type::Float], 9..10)]
+    #[case::call_invalid_argument_type_function_1(
+        "let f = (x: (int) -> int) -> x(1) in f((x: int, y: int) -> x * y)",
+        Type::Function {
+            parameter_types: vec![Type::Integer, Type::Integer],
+            return_type: Box::new(Type::Integer),
+        },
+        [int_to_int_function()],
+        39..64,
+    )]
+    #[case::call_invalid_argument_type_function_2(
+        "let f = (x: (int) -> int) -> x(1) in f((x: float) -> as_int(x * x))",
+        Type::Function {
+            parameter_types: vec![Type::Float],
+            return_type: Box::new(Type::Integer),
+        },
+        [int_to_int_function()],
+        39..66,
+    )]
+    #[case::call_invalid_argument_type_function_3(
+        "let f = (x: (int) -> int) -> x(1) in f((x: int) -> as_float(x) / 2.0)",
+        Type::Function {
+            parameter_types: vec![Type::Integer],
+            return_type: Box::new(Type::Float),
+        },
+        [int_to_int_function()],
+        39..68,
+    )]
     #[case::callee_is_float("let x = 1.0 in x()", Type::Float, [ExpectedType::AnyFunction], 15..16)]
     #[case::callee_is_int("let x = 1 in x()", Type::Integer, [ExpectedType::AnyFunction], 13..14)]
     #[case::callee_is_bool("let x = true in x()", Type::Bool, [ExpectedType::AnyFunction], 16..17)]
