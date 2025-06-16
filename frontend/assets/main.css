@@ -1,7 +1,13 @@
+:root {
+    --bg-color: #2c2c2c;
+    --text-color: #e8e4d8;
+    --highlight-color: #e4e4e8;
+}
+
 /* App-wide styling */
 body {
-    background-color: #0f1116;
-    color: #ffffff;
+    background-color: var(--bg-color);
+    color: var(--text-color);
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     margin: 20px;
 }
@@ -21,4 +27,30 @@ body {
 
 .header img {
     height: 100%;
+}
+
+.skill-check-state-form {
+    width: 640px;
+    margin-left: auto;
+    margin-right: auto;
+
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    flex-direction: row;
+    gap: 8px;
+}
+
+.flex-break {
+    flex-basis: 100%;
+    height: 0;
+}
+
+input {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    border-color: var(--highlight-color);
+    border-width: 1px;
+    border-radius: 5px;
+    padding: 5px;
 }

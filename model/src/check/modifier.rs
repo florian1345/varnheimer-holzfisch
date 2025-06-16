@@ -76,6 +76,10 @@ impl Aptitude {
             .into_iter()
             .filter(move |reroll| reroll.num_dice() <= self.max_dice.get())
     }
+
+    pub fn max_dice(self) -> NonZeroUsize {
+        self.max_dice
+    }
 }
 
 /// Modifier actions are individual usages of modifiers.

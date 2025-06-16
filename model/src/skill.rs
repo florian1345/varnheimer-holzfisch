@@ -68,6 +68,10 @@ impl SkillPoints {
             Some(QualityLevel(NonZeroU8::new(quality_level as u8).unwrap()))
         }
     }
+
+    pub fn as_i32(self) -> i32 {
+        self.0
+    }
 }
 
 impl AddAssign for SkillPoints {
@@ -124,6 +128,10 @@ impl Attribute {
     pub fn missing_skill_points(self, roll: Roll) -> SkillPoints {
         self.missing_skill_points_unbounded(roll)
             .max(SkillPoints::new(0))
+    }
+
+    pub fn as_i32(self) -> i32 {
+        self.0
     }
 }
 
