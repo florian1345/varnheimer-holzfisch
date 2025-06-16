@@ -38,7 +38,7 @@ impl PartialOrd for Evaluation {
     }
 }
 
-// TODO FW this is not sound - adding evaluations reach infinity or -infinity
+// TODO this is not sound - adding evaluations reach infinity or -infinity
 //  even worse, infinity + (-infinity) is NaN
 //  we may want a checked_add (or explicitly call this unchecked_add)
 
