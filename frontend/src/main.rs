@@ -3,7 +3,9 @@ mod components;
 use dioxus::prelude::*;
 use model::check::{DICE_PER_SKILL_CHECK, PartialSkillCheckState};
 use model::skill;
+use scholle::ScholleEvaluator;
 
+use crate::components::scholle_input::ScholleInput;
 use crate::components::skill_check_state::SkillCheckStateForm;
 
 const FAVICON: Asset = asset!("/assets/favicon.ico");
@@ -29,9 +31,14 @@ fn default_skill_check_state() -> PartialSkillCheckState {
     }
 }
 
+pub const DEFAULT_SCHOLLE_CODE: &str =
+    "(if is_success then quality_level else -1) + 2 * remaining_fate_points";
+
 #[component]
 fn App() -> Element {
     let mut skill_check_state_signal = use_signal(default_skill_check_state);
+    let mut evaluator_result_signal =
+        use_signal(|| ScholleEvaluator::new(DEFAULT_SCHOLLE_CODE).unwrap());
 
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
@@ -47,6 +54,10 @@ fn App() -> Element {
         SkillCheckStateForm {
             skill_check_state: skill_check_state_signal.read().clone(),
             onchange: move |new_state| skill_check_state_signal.set(new_state),
+        }
+
+        ScholleInput {
+            onnewevaluator: move |new_evaluator| evaluator_result_signal.set(new_evaluator),
         }
     }
 }

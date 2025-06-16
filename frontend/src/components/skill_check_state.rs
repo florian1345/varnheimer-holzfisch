@@ -77,7 +77,7 @@ pub struct SkillCheckStateFormProps {
 pub fn SkillCheckStateForm(props: SkillCheckStateFormProps) -> Element {
     rsx! {
         div {
-            class: "skill-check-state-form",
+            class: "skill-check-state-form center-box",
 
             "Attributes",
 

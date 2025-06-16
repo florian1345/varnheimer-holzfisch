@@ -2,6 +2,7 @@
     --bg-color: #2c2c2c;
     --text-color: #e8e4d8;
     --highlight-color: #e4e4e8;
+    --error-color: #ec8880;
 }
 
 /* App-wide styling */
@@ -29,11 +30,19 @@ body {
     height: 100%;
 }
 
-.skill-check-state-form {
+.center-box {
     width: 640px;
     margin-left: auto;
     margin-right: auto;
+}
 
+.center-box > textarea {
+    margin-top: 32px;
+    width: 100%;
+    resize: none;
+}
+
+.skill-check-state-form {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
@@ -46,11 +55,17 @@ body {
     height: 0;
 }
 
-input {
+input, textarea {
+    font-size: 14px;
     background-color: var(--bg-color);
     color: var(--text-color);
     border-color: var(--highlight-color);
     border-width: 1px;
     border-radius: 5px;
     padding: 5px;
+}
+
+.error {
+    margin-top: 8px;
+    color: var(--error-color);
 }
