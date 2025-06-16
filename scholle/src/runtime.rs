@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::{self, Debug, Formatter};
 use std::ops::{Add, Deref, Div, Mul, Rem, Sub};
+use std::panic::RefUnwindSafe;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -11,7 +12,7 @@ use crate::context::{DeclarationId, Expression, ExpressionKind};
 use crate::error::{RuntimeError, RuntimeErrorKind, RuntimeResult};
 use crate::operators::{BinaryOperator, UnaryOperator};
 
-pub type BuiltinFunctionImpl = dyn Fn(Vec<Value>) -> Value;
+pub type BuiltinFunctionImpl = dyn Fn(Vec<Value>) -> Value + RefUnwindSafe;
 
 #[derive(Clone)]
 pub struct BuiltinFunction {
@@ -19,7 +20,9 @@ pub struct BuiltinFunction {
 }
 
 impl BuiltinFunction {
-    pub(crate) fn new(implementation: impl Fn(Vec<Value>) -> Value + 'static) -> BuiltinFunction {
+    pub(crate) fn new(
+        implementation: impl Fn(Vec<Value>) -> Value + RefUnwindSafe + 'static,
+    ) -> BuiltinFunction {
         BuiltinFunction {
             implementation: Arc::new(implementation),
         }
@@ -361,6 +364,7 @@ mod tests {
 
     use super::*;
     use crate::context::analyze;
+    use crate::span::CodeSpan;
     use crate::{lexer, parser};
 
     #[derive(Debug)]
@@ -515,6 +519,28 @@ mod tests {
         Failure.with_modifiers([Modifier::ExtraQualityLevelOnSuccess]),
         0.0,
     )]
+    #[case::equality_1(
+        "if is_critical_success != true then 1 else 0",
+        Failure.without_modifiers(),
+        1,
+    )]
+    #[case::equality_2(
+        "if quality_level != 3 then 1 else 0",
+        Success(QualityLevel::THREE).without_modifiers(),
+        0,
+    )]
+    #[case::equality_3("if pow(2.0, 0.5) != 1.4 then 1 else 0", Failure.without_modifiers(), 1)]
+    #[case::equality_4(
+        "if is_critical_success == true then 1 else 0",
+        Failure.without_modifiers(),
+        0,
+    )]
+    #[case::equality_5(
+        "if quality_level == 3 then 1 else 0",
+        Success(QualityLevel::THREE).without_modifiers(),
+        1,
+    )]
+    #[case::equality_6("if pow(2.0, 0.5) == 1.4 then 1 else 0", Failure.without_modifiers(), 0)]
     #[case::let_1(
         "let x = quality_level + 1 in x * x",
         Success(QualityLevel::TWO).without_modifiers(),
@@ -569,6 +595,7 @@ mod tests {
         Failure.without_modifiers(),
         6,
     )]
+    #[case::rounding_to_zero("as_int(-2.99) * as_int(3.99)", Failure.without_modifiers(), -6)]
     fn evaluate_success(
         #[case] code: &str,
         #[case] outcome: SkillCheckOutcome,
@@ -595,18 +622,39 @@ mod tests {
     }
 
     #[rstest]
-    #[case::add_overflow("9223372036854775807 + 1", RuntimeErrorKind::ArithmeticOverflow)]
-    #[case::sub_overflow("-9223372036854775807 - 2", RuntimeErrorKind::ArithmeticOverflow)]
-    #[case::mul_overflow("4294967296 * 4294967296", RuntimeErrorKind::ArithmeticOverflow)]
-    #[case::div_by_zero("1 / 0", RuntimeErrorKind::DivideByZero)]
-    #[case::mod_by_zero("1 % 0", RuntimeErrorKind::DivideByZero)]
-    fn evaluate_error(#[case] code: &str, #[case] expected_kind: RuntimeErrorKind) {
+    #[case::add_overflow(
+        "if true then 9223372036854775807 + 1 else 0",
+        RuntimeErrorKind::ArithmeticOverflow,
+        13..36,
+    )]
+    #[case::sub_overflow(
+        "if false then 0 else -9223372036854775807 - 2",
+        RuntimeErrorKind::ArithmeticOverflow,
+        21..45,
+    )]
+    #[case::mul_overflow(
+        "as_float(4294967296 * 4294967296)",
+        RuntimeErrorKind::ArithmeticOverflow,
+        9..32,
+    )]
+    #[case::neg_overflow(
+        "let f = (x: int) -> -(-x - 1) in if f(9223372036854775807) > 0 then 1 else 0",
+        RuntimeErrorKind::ArithmeticOverflow,
+        20..29,
+    )]
+    #[case::div_by_zero("1 + 1 / 0", RuntimeErrorKind::DivideByZero, 4..9)]
+    #[case::mod_by_zero("1 % 0 + 1", RuntimeErrorKind::DivideByZero, 0..5)]
+    fn evaluate_error(
+        #[case] code: &str,
+        #[case] expected_kind: RuntimeErrorKind,
+        #[case] expected_span: impl Into<CodeSpan>,
+    ) {
         let expression = parse_and_analyze(code);
         let result = evaluate(&expression, &Failure.without_modifiers());
 
         assert_that!(result).contains_error(RuntimeError {
             kind: expected_kind,
-            span: (0..code.len()).into(),
+            span: expected_span.into(),
         });
     }
 }

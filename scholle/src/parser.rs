@@ -1154,11 +1154,13 @@ mod tests {
     #[case::incomplete_unary("!", TokenKind::EndOfCode.at(1..1))]
     #[case::missing_right_parenthesis("(1 + 2", TokenKind::EndOfCode.at(6..6))]
     #[case::colon_instead_of_right_parenthesis("(1 + 2:", TokenKind::Colon.at(6..7))]
+    #[case::invalid_parenthesized_token("(bool)", TokenKind::Bool.at(1..5))]
     #[case::call_missing_closing_parentheses("f(x", TokenKind::EndOfCode.at(3..3))]
     #[case::call_missing_comma("f(x y)", TokenKind::Identifier("y".to_owned()).at(4..5))]
     #[case::if_missing_condition("if then 1 else 2", TokenKind::Then.at(3..7))]
     #[case::if_missing_then("if (true) x else y", TokenKind::Identifier("x".to_owned()).at(10..11))]
     #[case::if_missing_then_branch("if x then else 1", TokenKind::Else.at(10..14))]
+    #[case::if_missing_else("(if x then y)", TokenKind::RightParenthesis.at(12..13))]
     #[case::if_missing_else_branch("if x then y else", TokenKind::EndOfCode.at(16..16))]
     #[case::let_missing_in("let x = 3 x * x", TokenKind::Identifier("x".to_owned()).at(10..11))]
     #[case::let_missing_body("let x = 3 in", TokenKind::EndOfCode.at(12..12))]
@@ -1168,6 +1170,7 @@ mod tests {
         "let x = 3 y = 5 in x * y",
         TokenKind::Identifier("y".to_owned()).at(10..11)
     )]
+    #[case::let_trailing_comma("let x = 3, in x", TokenKind::In.at(11..13))]
     #[case::lambda_missing_closing_parenthesis("(a: int -> 1", TokenKind::Arrow.at(8..10))]
     #[case::lambda_missing_type("(x) -> 3", TokenKind::Arrow.at(4..6))]
     #[case::lambda_with_invalid_type(
@@ -1186,8 +1189,9 @@ mod tests {
         "(f: int -> int) -> f(0)",
         TokenKind::Arrow.at(8..10)
     )]
+    #[case::function_type_missing_arrow("(f: (int) int) -> f(0)", TokenKind::Int.at(10..13))]
     #[case::function_type_missing_return_type(
-        "(f: (int) -> ) f(0)",
+        "(f: (int) -> ) -> f(0)",
         TokenKind::RightParenthesis.at(13..14)
     )]
     #[case::function_type_with_trailing_comma(

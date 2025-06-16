@@ -1,3 +1,4 @@
+use std::panic::RefUnwindSafe;
 use std::sync::LazyLock;
 
 use model::check::modifier::{Aptitude, Modifier};
@@ -52,12 +53,20 @@ impl RawBuiltin {
         implementation: ImplT,
     ) -> RawBuiltin
     where
-        ImplT: Fn(Arguments, &SkillCheckOutcome) -> Value + Clone + Send + Sync + 'static,
+        ImplT: Fn(Arguments, &SkillCheckOutcome) -> Value
+            + Clone
+            + Send
+            + Sync
+            + RefUnwindSafe
+            + 'static,
     {
+        let parameter_types = parameter_types.into_iter().collect::<Vec<_>>();
+        let parameter_count = parameter_types.len();
+
         RawBuiltin {
             identifier,
             typ: Type::Function {
-                parameter_types: parameter_types.into_iter().collect(),
+                parameter_types,
                 return_type: Box::new(return_type),
             },
             constructor: Box::new(move |outcome: &SkillCheckOutcome| {
@@ -65,7 +74,7 @@ impl RawBuiltin {
                 let implementation = implementation.clone();
 
                 Value::BuiltinFunction(BuiltinFunction::new(move |arguments: Vec<Value>| {
-                    implementation(Arguments(arguments), &outcome)
+                    implementation(Arguments::new(arguments, parameter_count), &outcome)
                 }))
             }),
         }
@@ -86,6 +95,18 @@ pub struct RuntimeBuiltin {
 struct Arguments(Vec<Value>);
 
 impl Arguments {
+    fn new(values: Vec<Value>, expected_count: usize) -> Arguments {
+        assert_eq!(
+            values.len(),
+            expected_count,
+            "builtin called with incorrect number of arguments (expected {}, got {})",
+            expected_count,
+            values.len()
+        );
+
+        Arguments(values)
+    }
+
     fn get_int(&self, index: usize) -> i64 {
         let value = &self.0[index];
 
@@ -109,10 +130,13 @@ impl Arguments {
     }
 }
 
-fn parameterized_modifier_count_accessor(
+fn parameterized_modifier_count_accessor<ModFromArgT>(
     identifier: &'static str,
-    modifier_from_argument: impl Fn(i64) -> Option<Modifier> + Clone + Send + Sync + 'static,
-) -> RawBuiltin {
+    modifier_from_argument: ModFromArgT,
+) -> RawBuiltin
+where
+    ModFromArgT: Fn(i64) -> Option<Modifier> + Clone + Send + Sync + RefUnwindSafe + 'static,
+{
     RawBuiltin::new_function(
         identifier,
         [Type::Integer],
@@ -240,4 +264,70 @@ pub fn runtime_builtins(outcome: &SkillCheckOutcome) -> Vec<RuntimeBuiltin> {
             raw_builtin.to_runtime_builtin(declaration_id, outcome)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use kernal::prelude::*;
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case::as_float_1("as_float", [])]
+    #[case::as_float_2("as_float", [Value::Float(1.0)])]
+    #[case::as_float_3("as_float", [Value::Integer(1), Value::Integer(2)])]
+    #[case::as_int_1("as_int", [])]
+    #[case::as_int_2("as_int", [Value::Integer(1)])]
+    #[case::as_int_3("as_int", [Value::Float(1.0), Value::Float(2.0)])]
+    #[case::pow_1("pow", [Value::Float(1.0)])]
+    #[case::pow_2("pow", [Value::Float(1.0), Value::Float(2.0), Value::Float(3.0)])]
+    #[case::pow_3("pow", [Value::Integer(1), Value::Float(2.0)])]
+    #[case::pow_4("pow", [Value::Float(1.0), Value::Integer(2)])]
+    #[case::remaining_aptitudes_1("remaining_aptitudes", [])]
+    #[case::remaining_aptitudes_2("remaining_aptitudes", [Value::Float(1.0)])]
+    #[case::remaining_aptitudes_3("remaining_aptitudes", [Value::Integer(1), Value::Integer(2)])]
+    #[case::rremaining_extra_skill_points_1("remaining_extra_skill_points", [])]
+    #[case::rremaining_extra_skill_points_2("remaining_extra_skill_points", [Value::Float(1.0)])]
+    #[case::rremaining_extra_skill_points_3(
+        "remaining_extra_skill_points",
+        [Value::Integer(1), Value::Integer(2)],
+    )]
+    #[case::remaining_extra_skill_points_on_success_1(
+        "remaining_extra_skill_points_on_success",
+        [],
+    )]
+    #[case::remaining_extra_skill_points_on_success_2(
+        "remaining_extra_skill_points_on_success",
+        [Value::Float(1.0)],
+    )]
+    #[case::remaining_extra_skill_points_on_success_3(
+        "remaining_extra_skill_points_on_success",
+        [Value::Integer(1), Value::Integer(2)],
+    )]
+    fn calling_builtin_with_invalid_signature_panics(
+        #[case] builtin_identifier: &str,
+        #[case] arguments: impl IntoIterator<Item = Value>,
+    ) {
+        let arguments = arguments.into_iter().collect::<Vec<_>>();
+        let declaration_id = context_builtins()
+            .into_iter()
+            .find(|builtin| builtin.identifier == builtin_identifier)
+            .unwrap()
+            .declaration_id;
+        let outcome = SkillCheckOutcome {
+            kind: SkillCheckOutcomeKind::Failure,
+            remaining_modifiers: Default::default(),
+        };
+        let Value::BuiltinFunction(builtin) = runtime_builtins(&outcome)
+            .into_iter()
+            .find(|builtin| builtin.declaration_id == declaration_id)
+            .unwrap()
+            .value
+        else {
+            panic!("{} is not a builtin function", builtin_identifier)
+        };
+
+        assert_that!(|| builtin(arguments)).panics_with_message_containing("builtin");
+    }
 }

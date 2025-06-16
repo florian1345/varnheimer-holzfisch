@@ -13,6 +13,7 @@ use model::roll::Roll;
 use model::skill::{Attribute, QualityLevel, SkillPoints};
 use rstest::rstest;
 use scholle::ScholleEvaluator;
+use scholle::error::{RuntimeError, RuntimeErrorKind};
 
 fn engine(scholle_code: impl AsRef<str>) -> VarnheimerHolzfischEngine<ScholleEvaluator> {
     let evaluator = ScholleEvaluator::new(scholle_code).unwrap();
@@ -318,4 +319,53 @@ fn given_roll_with_aptitude_evaluates_reroll_with_cap_correctly() {
         action: ModifierAction::RerollByAptitude(Reroll::new([false, true, false]).unwrap()),
     });
     assert_that!(best_move.1.evaluation).is_close_to(eval(2.35), EPS);
+}
+
+#[test]
+fn evaluation_error() {
+    // Fails at QL 4
+    let mut engine = engine("100 / (4 - quality_level)");
+    let state = PartialSkillCheckState {
+        attributes: [Attribute::new(10), Attribute::new(10), Attribute::new(10)],
+        roll_caps: [None, None, None],
+        fixed_rolls: [None, None, None],
+        skill_value: SkillPoints::new(18),
+        extra_quality_levels_on_success: None,
+        extra_skill_points_on_success: SkillPoints::new(0),
+        modifiers: ModifierState::default(),
+        inaptitude: false,
+    };
+
+    let result = engine.evaluate_partial(state);
+
+    assert_that!(result).contains_error(RuntimeError {
+        kind: RuntimeErrorKind::DivideByZero,
+        span: (0..25).into(),
+    });
+}
+
+#[test]
+fn evaluation_error_with_cap() {
+    let mut engine = engine("1.0 / as_float(4 - quality_level)");
+    let state = PartialSkillCheckState {
+        attributes: [Attribute::new(10), Attribute::new(10), Attribute::new(10)],
+        roll_caps: [None, Some(Roll::new(10).unwrap()), None],
+        fixed_rolls: [
+            Some(Roll::new(10).unwrap()),
+            None,
+            Some(Roll::new(10).unwrap()),
+        ],
+        skill_value: SkillPoints::new(10),
+        extra_quality_levels_on_success: None,
+        extra_skill_points_on_success: SkillPoints::new(0),
+        modifiers: ModifierState::default(),
+        inaptitude: false,
+    };
+
+    let result = engine.evaluate_partial(state);
+
+    assert_that!(result).contains_error(RuntimeError {
+        kind: RuntimeErrorKind::InvalidResult(f64::INFINITY),
+        span: (0..33).into(),
+    });
 }

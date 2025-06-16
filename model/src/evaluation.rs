@@ -38,6 +38,10 @@ impl PartialOrd for Evaluation {
     }
 }
 
+// TODO FW this is not sound - adding evaluations reach infinity or -infinity
+//  even worse, infinity + (-infinity) is NaN
+//  we may want a checked_add (or explicitly call this unchecked_add)
+
 impl AddAssign for Evaluation {
     fn add_assign(&mut self, rhs: Evaluation) {
         self.0 += rhs.0;
@@ -63,21 +67,6 @@ impl Mul<Probability> for Evaluation {
     type Output = Evaluation;
 
     fn mul(mut self, rhs: Probability) -> Evaluation {
-        self *= rhs;
-        self
-    }
-}
-
-impl MulAssign<usize> for Evaluation {
-    fn mul_assign(&mut self, rhs: usize) {
-        self.0 *= rhs as f64;
-    }
-}
-
-impl Mul<usize> for Evaluation {
-    type Output = Evaluation;
-
-    fn mul(mut self, rhs: usize) -> Evaluation {
         self *= rhs;
         self
     }
