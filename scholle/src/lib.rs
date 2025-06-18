@@ -14,6 +14,7 @@ pub mod parser;
 pub mod runtime;
 pub mod span;
 
+#[derive(Clone)]
 pub struct ScholleEvaluator {
     expression: Expression,
 }

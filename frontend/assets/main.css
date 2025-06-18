@@ -1,5 +1,6 @@
 :root {
     --bg-color: #2c2c2c;
+    --hover-bg-color: #383838;
     --text-color: #e8e4d8;
     --highlight-color: #e4e4e8;
     --error-color: #ec8880;
@@ -37,7 +38,7 @@ body {
 }
 
 .center-box > textarea {
-    margin-top: 32px;
+    margin-top: 24px;
     width: 100%;
     resize: none;
 }
@@ -55,17 +56,50 @@ body {
     height: 0;
 }
 
-input, textarea {
+input, textarea, button {
     font-size: 14px;
     background-color: var(--bg-color);
     color: var(--text-color);
     border-color: var(--highlight-color);
     border-width: 1px;
+}
+
+input, textarea {
     border-radius: 5px;
     padding: 5px;
+}
+
+button {
+    margin-top: 24px;
+    font-size: 16px;
+    border-radius: 8px;
+    padding: 8px 16px;
+}
+
+button:hover {
+    background-color: var(--hover-bg-color);
+}
+
+table {
+    margin-top: 8px;
+}
+
+td, th {
+    padding: 8px;
+}
+
+table, th, td {
+    border-style: solid;
+    border-width: 1px;
+    border-color: var(--highlight-color);
+    border-collapse: collapse;
 }
 
 .error {
     margin-top: 8px;
     color: var(--error-color);
+}
+
+.info {
+    margin-top: 8px;
 }

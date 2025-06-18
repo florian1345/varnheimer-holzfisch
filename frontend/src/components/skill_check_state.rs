@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
+use model::check::PartialSkillCheckState;
 use model::check::modifier::{Aptitude, Modifier};
-use model::check::{DICE_PER_SKILL_CHECK, PartialSkillCheckState};
 use model::roll::Roll;
 use model::skill;
 

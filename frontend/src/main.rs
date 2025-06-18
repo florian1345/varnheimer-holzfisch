@@ -1,12 +1,15 @@
 mod components;
+mod evaluate;
 
 use dioxus::prelude::*;
 use model::check::{DICE_PER_SKILL_CHECK, PartialSkillCheckState};
 use model::skill;
 use scholle::ScholleEvaluator;
 
+use crate::components::evaluation_result_view::EvaluationResultView;
 use crate::components::scholle_input::ScholleInput;
 use crate::components::skill_check_state::SkillCheckStateForm;
+use crate::evaluate::EvaluationResult;
 
 const FAVICON: Asset = asset!("/assets/favicon.ico");
 const MAIN_CSS: Asset = asset!("/assets/main.css");
@@ -37,8 +40,8 @@ pub const DEFAULT_SCHOLLE_CODE: &str =
 #[component]
 fn App() -> Element {
     let mut skill_check_state_signal = use_signal(default_skill_check_state);
-    let mut evaluator_result_signal =
-        use_signal(|| ScholleEvaluator::new(DEFAULT_SCHOLLE_CODE).unwrap());
+    let mut evaluator_signal = use_signal(|| ScholleEvaluator::new(DEFAULT_SCHOLLE_CODE).unwrap());
+    let mut evaluation_result_signal: Signal<Option<EvaluationResult>> = use_signal(|| None);
 
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
@@ -57,7 +60,29 @@ fn App() -> Element {
         }
 
         ScholleInput {
-            onnewevaluator: move |new_evaluator| evaluator_result_signal.set(new_evaluator),
+            onnewevaluator: move |new_evaluator| evaluator_signal.set(new_evaluator),
+        }
+
+        div {
+            class: "center-box",
+
+            button {
+                onclick: move |_| {
+                    let partial_state = &*skill_check_state_signal.read();
+                    let evaluator = &*evaluator_signal.read();
+                    let evaluation_result = evaluate::evaluate(partial_state, evaluator);
+
+                    evaluation_result_signal.set(Some(evaluation_result));
+                },
+
+                "Evaluate"
+            }
+        }
+
+        if let Some(evaluation_result) = evaluation_result_signal.read().as_ref() {
+            EvaluationResultView {
+                evaluation_result: evaluation_result.clone(),
+            }
         }
     }
 }
