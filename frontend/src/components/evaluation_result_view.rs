@@ -137,6 +137,7 @@ pub fn EvaluationResultView(evaluation_result: EvaluationResult) -> Element {
 
 #[cfg(test)]
 mod tests {
+    use dioxus_test_utils::{NodeWrapperAssertions, VirtualDomWrapper};
     use kernal::prelude::*;
     use model::check::modifier::{Aptitude, Modifier, ModifierAction, Reroll};
     use model::check::outcome::{
@@ -151,7 +152,6 @@ mod tests {
 
     use super::*;
     use crate::evaluate::EvaluationOutcome;
-    use crate::test_util::{ElementWrapperAssertions, NodeWrapperAssertions, VirtualDomWrapper};
 
     fn mount(evaluation_result: EvaluationResult) -> VirtualDomWrapper {
         VirtualDomWrapper::new_with_props(
@@ -167,23 +167,12 @@ mod tests {
             span: (28..79).into(),
         }));
 
-        let root_node = vdom.root_nodes()[0].expect_element();
+        let root_node = vdom.root_nodes()[0].clone().expect_element();
+        let error_div = root_node.find("div.center-box > div.error");
 
-        assert_that!(root_node)
-            .has_tag("div")
-            .has_exactly_classes(["center-box"]);
-
-        let children = root_node.children();
-
-        assert_that!(&children).has_length(1);
-
-        let child = children[0].expect_element();
-
-        assert_that!(child)
-            .has_tag("div")
-            .has_exactly_classes(["error"]);
-
-        assert_that!(child.children()[0]).is_text("arithmetic operation caused overflow @ 28..79");
+        assert_that!(&error_div.children()[0])
+            .is_text("arithmetic operation caused overflow @ 28..79");
+        assert_that!(root_node.try_find("div.info")).is_none();
     }
 
     #[test]
@@ -196,19 +185,13 @@ mod tests {
             },
         }));
 
-        let children = vdom.root_nodes()[0].expect_element().children();
-
-        assert_that!(&children).has_length(1);
-
-        let evaluated_probabilities_view = children[0].expect_element();
-
-        assert_that!(evaluated_probabilities_view)
-            .has_tag("div")
-            .has_exactly_classes(["info"]);
-        assert_that!(evaluated_probabilities_view.children()[0]).is_text("Average value: 0.25");
+        let root_node = vdom.root_nodes()[0].clone().expect_element();
+        let info_div = root_node.find("div.center-box > div.info");
 
         // We are content with only checking the existence of an EvaluatedProbabilitiesView.
         // Table content will be tested in its own test.
+        assert_that!(&info_div.children()[0]).is_text("Average value: 0.25");
+        assert_that!(root_node.try_find("div.error")).is_none();
     }
 
     fn always_failure() -> SkillCheckOutcomeProbabilities {
@@ -295,15 +278,12 @@ mod tests {
             },
         }));
 
-        let children = vdom.root_nodes()[0].expect_element().children();
+        let root_node = vdom.root_nodes()[0].clone().expect_element();
 
-        assert_that!(&children).has_length(2);
+        assert_that!(root_node.children()).has_length(2);
 
-        let recommended_action_div = children[0].expect_element();
+        let recommended_action_div = root_node.find_first(".info").unwrap();
 
-        assert_that!(recommended_action_div)
-            .has_tag("div")
-            .has_exactly_classes(["info"]);
-        assert_that!(recommended_action_div.children()[0]).is_text(expected_text);
+        assert_that!(&recommended_action_div.children()[0]).is_text(expected_text);
     }
 }

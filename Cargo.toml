@@ -1,6 +1,7 @@
 [workspace]
 
 members = [
+    "dioxus-test-utils",
     "frontend",
     "model",
     "scholle"

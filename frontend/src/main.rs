@@ -1,9 +1,6 @@
 mod components;
 mod evaluate;
 
-#[cfg(test)]
-pub(crate) mod test_util;
-
 use dioxus::prelude::*;
 use model::check::{DICE_PER_SKILL_CHECK, PartialSkillCheckState};
 use model::skill;

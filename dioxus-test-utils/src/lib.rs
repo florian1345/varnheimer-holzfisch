@@ -1,8 +1,22 @@
+mod select;
+
+use std::borrow::Borrow;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
+use std::rc::Rc;
 
-use dioxus::dioxus_core::{AttributeValue, DynamicNode, NoOpMutations};
-use dioxus::prelude::*;
+use dioxus_core::{
+    Attribute,
+    AttributeValue,
+    ComponentFunction,
+    DynamicNode,
+    NoOpMutations,
+    ScopeId,
+    TemplateAttribute,
+    TemplateNode,
+    VNode,
+    VirtualDom,
+};
 use futures::FutureExt;
 use kernal::prelude::*;
 use kernal::{AssertThat, AssertThatData};
@@ -32,8 +46,11 @@ impl From<Attribute> for AttributeWrapper {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct ElementWrapper<'dom> {
+    template_node: &'dom TemplateNode,
+    parent: Option<Rc<ElementWrapper<'dom>>>,
+    index_in_parent: usize,
     tag: &'static str,
     attrs: &'static [TemplateAttribute],
     children: &'static [TemplateNode],
@@ -42,22 +59,22 @@ pub struct ElementWrapper<'dom> {
 }
 
 impl<'dom> ElementWrapper<'dom> {
-    pub fn tag(self) -> &'static str {
+    pub fn tag(&self) -> &'static str {
         self.tag
     }
 
-    pub fn attributes(self) -> Vec<AttributeWrapper> {
+    pub fn attributes(&self) -> Vec<AttributeWrapper> {
         let mut attributes = Vec::new();
 
         for attribute in self.attrs {
-            match attribute {
-                &TemplateAttribute::Static { name, value, .. } => {
+            match *attribute {
+                TemplateAttribute::Static { name, value, .. } => {
                     attributes.push(AttributeWrapper {
                         name,
                         value: value.to_owned(),
                     })
                 },
-                &TemplateAttribute::Dynamic { id } => attributes.extend(
+                TemplateAttribute::Dynamic { id } => attributes.extend(
                     self.vnode.dynamic_attrs[id]
                         .iter()
                         .cloned()
@@ -77,14 +94,22 @@ impl<'dom> ElementWrapper<'dom> {
             .collect()
     }
 
-    pub fn children(self) -> Vec<NodeWrapper<'dom>> {
+    pub fn id(&self) -> Option<String> {
+        self.attributes()
+            .into_iter()
+            .find(|attr| attr.name == "id")
+            .map(|attr| attr.value)
+    }
+
+    pub fn children(&self) -> Vec<NodeWrapper<'dom>> {
         let mut output = Vec::new();
 
-        for &child_template_node in self.children {
+        for child_template_node in self.children {
             template_node_children_rec(
                 child_template_node,
                 self.vnode,
                 self.virtual_dom,
+                Some(self),
                 &mut output,
             );
         }
@@ -103,64 +128,78 @@ impl<'dom> Debug for ElementWrapper<'dom> {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum NodeWrapper<'dom> {
     Element(ElementWrapper<'dom>),
     Text(&'dom str),
 }
 
 impl<'dom> NodeWrapper<'dom> {
-    pub fn expect_element(self) -> ElementWrapper<'dom> {
+    pub fn as_element(self) -> Option<ElementWrapper<'dom>> {
         match self {
-            NodeWrapper::Element(element) => element,
-            NodeWrapper::Text(text) => {
-                panic!("expected element node but found text `{}`", text)
-            },
+            NodeWrapper::Element(element) => Some(element),
+            NodeWrapper::Text(_) => None,
+        }
+    }
+
+    pub fn expect_element(self) -> ElementWrapper<'dom> {
+        self.as_element()
+            .expect("expected element node but found text")
+    }
+
+    pub fn as_text(self) -> Option<&'dom str> {
+        match self {
+            NodeWrapper::Text(text) => Some(text),
+            NodeWrapper::Element(_) => None,
         }
     }
 
     pub fn expect_text(self) -> &'dom str {
-        match self {
-            NodeWrapper::Text(text) => text,
-            NodeWrapper::Element(element) => {
-                panic!("expected text node but found element `{:?}`", element)
-            },
-        }
+        self.as_text()
+            .expect("expected text node but found element")
     }
 }
 
 fn template_node_children_rec<'dom>(
-    template_node: TemplateNode,
+    template_node: &'dom TemplateNode,
     vnode: &'dom VNode,
     virtual_dom: &'dom VirtualDom,
+    parent: Option<&ElementWrapper<'dom>>,
     output: &mut Vec<NodeWrapper<'dom>>,
 ) {
-    match template_node {
+    match *template_node {
         TemplateNode::Element {
             tag,
             attrs,
             children,
             ..
-        } => output.push(NodeWrapper::Element(ElementWrapper {
-            tag,
-            attrs,
-            children,
-            vnode,
-            virtual_dom,
-        })),
+        } => {
+            let index = output.len();
+
+            output.push(NodeWrapper::Element(ElementWrapper {
+                template_node,
+                parent: parent.map(|parent| Rc::new(parent.clone())),
+                index_in_parent: index,
+                tag,
+                attrs,
+                children,
+                vnode,
+                virtual_dom,
+            }))
+        },
         TemplateNode::Text { text } => output.push(NodeWrapper::Text(text)),
         TemplateNode::Dynamic { id } => match &vnode.dynamic_nodes[id] {
             DynamicNode::Text(text) => output.push(NodeWrapper::Text(&text.value)),
             DynamicNode::Fragment(vnodes) => {
                 vnodes
                     .iter()
-                    .for_each(|vnode| children_rec(vnode, virtual_dom, output));
+                    .for_each(|vnode| children_rec(vnode, virtual_dom, parent, output));
             },
             DynamicNode::Component(component) => {
                 let scope = component
                     .mounted_scope(id, vnode, virtual_dom)
                     .expect("component not mounted");
-                children_rec(scope.root_node(), virtual_dom, output);
+                children_rec(scope.root_node(), virtual_dom, parent, output);
             },
             _ => {},
         },
@@ -170,10 +209,11 @@ fn template_node_children_rec<'dom>(
 fn children_rec<'dom>(
     vnode: &'dom VNode,
     virtual_dom: &'dom VirtualDom,
+    parent: Option<&ElementWrapper<'dom>>,
     output: &mut Vec<NodeWrapper<'dom>>,
 ) {
-    for &template_node in vnode.template.roots {
-        template_node_children_rec(template_node, vnode, virtual_dom, output);
+    for template_node in vnode.template.roots {
+        template_node_children_rec(template_node, vnode, virtual_dom, parent, output);
     }
 }
 
@@ -204,7 +244,7 @@ impl VirtualDomWrapper {
             .root_node();
 
         let mut root_nodes = Vec::new();
-        children_rec(root_vnode, &self.virtual_dom, &mut root_nodes);
+        children_rec(root_vnode, &self.virtual_dom, None, &mut root_nodes);
         root_nodes
     }
 }
@@ -215,14 +255,14 @@ pub trait ElementWrapperAssertions {
     fn has_exactly_classes(self, classes: impl IntoIterator<Item = impl AsRef<str>>) -> Self;
 }
 
-impl<'dom> ElementWrapperAssertions for AssertThat<ElementWrapper<'dom>> {
+impl<'dom, E: Borrow<ElementWrapper<'dom>>> ElementWrapperAssertions for AssertThat<E> {
     fn has_tag(self, tag: impl AsRef<str>) -> Self {
-        assert_that!(self.data().tag()).is_equal_to(tag.as_ref());
+        assert_that!(self.data().borrow().tag()).is_equal_to(tag.as_ref());
         self
     }
 
     fn has_exactly_classes(self, classes: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
-        assert_that!(self.data().classes()).contains_exactly_in_any_order(
+        assert_that!(self.data().borrow().classes()).contains_exactly_in_any_order(
             classes.into_iter().map(|class| class.as_ref().to_owned()),
         );
         self
@@ -230,12 +270,13 @@ impl<'dom> ElementWrapperAssertions for AssertThat<ElementWrapper<'dom>> {
 }
 
 pub trait NodeWrapperAssertions {
+    #[allow(clippy::wrong_self_convention)] // for assertion chaining
     fn is_text(self, expected_text: impl AsRef<str>) -> Self;
 }
 
-impl<'dom> NodeWrapperAssertions for AssertThat<NodeWrapper<'dom>> {
+impl<'dom, N: Borrow<NodeWrapper<'dom>>> NodeWrapperAssertions for AssertThat<N> {
     fn is_text(self, expected_text: impl AsRef<str>) -> Self {
-        let actual_text = self.data().expect_text();
+        let actual_text = self.data().borrow().clone().expect_text();
         assert_that!(actual_text).is_equal_to(expected_text.as_ref());
         self
     }

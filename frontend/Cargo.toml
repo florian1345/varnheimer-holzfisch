@@ -12,8 +12,8 @@ model = { path = "../model" }
 scholle = { path = "../scholle" }
 
 [dev-dependencies]
-futures = "0.3"
-kernal = "0.4"
+dioxus-test-utils = { path = "../dioxus-test-utils" }
+kernal = "0.4.0"
 rstest = "0.25.0"
 
 [features]

@@ -1,0 +1,13 @@
+[package]
+name = "dioxus-test-utils"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cssparser = "0.35.0"
+dioxus-core = "0.7.0-alpha.1"
+futures = "0.3.31"
+kernal = "0.4.0"
+precomputed-hash = "0.1.1"
+selectors = "0.29.0"
+string_cache = "0.8.9"
