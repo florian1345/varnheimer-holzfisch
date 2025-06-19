@@ -11,6 +11,11 @@ dioxus = { version = "0.7.0-alpha.1", features = [] }
 model = { path = "../model" }
 scholle = { path = "../scholle" }
 
+[dev-dependencies]
+futures = "0.3"
+kernal = "0.4"
+rstest = "0.25.0"
+
 [features]
 default = ["web"]
 web = ["dioxus/web"]
