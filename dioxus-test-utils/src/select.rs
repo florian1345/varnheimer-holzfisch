@@ -308,7 +308,8 @@ impl<'dom> ElementWrapper<'dom> {
                 element
                     .children()
                     .into_iter()
-                    .find_map(NodeWrapper::as_element),
+                    .rev()
+                    .filter_map(NodeWrapper::as_element),
             );
             let element = SelectorElementWrapper(element);
 

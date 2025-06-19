@@ -13,6 +13,7 @@ scholle = { path = "../scholle" }
 
 [dev-dependencies]
 dioxus-test-utils = { path = "../dioxus-test-utils" }
+model = { path = "../model", features = [ "test-util" ] }
 kernal = "0.4.0"
 rstest = "0.25.0"
 

@@ -116,6 +116,13 @@ impl<'dom> ElementWrapper<'dom> {
 
         output
     }
+
+    pub fn text_children(&self) -> Vec<&'dom str> {
+        self.children()
+            .into_iter()
+            .filter_map(NodeWrapper::as_text)
+            .collect()
+    }
 }
 
 impl<'dom> Debug for ElementWrapper<'dom> {
@@ -253,6 +260,8 @@ pub trait ElementWrapperAssertions {
     fn has_tag(self, tag: impl AsRef<str>) -> Self;
 
     fn has_exactly_classes(self, classes: impl IntoIterator<Item = impl AsRef<str>>) -> Self;
+
+    fn contains_only_text(self, expected_text: impl AsRef<str>) -> Self;
 }
 
 impl<'dom, E: Borrow<ElementWrapper<'dom>>> ElementWrapperAssertions for AssertThat<E> {
@@ -265,6 +274,15 @@ impl<'dom, E: Borrow<ElementWrapper<'dom>>> ElementWrapperAssertions for AssertT
         assert_that!(self.data().borrow().classes()).contains_exactly_in_any_order(
             classes.into_iter().map(|class| class.as_ref().to_owned()),
         );
+        self
+    }
+
+    fn contains_only_text(self, expected_text: impl AsRef<str>) -> Self {
+        let children = self.data().borrow().children();
+
+        assert_that!(&children).has_length(1);
+        assert_that!(&children[0]).is_text(expected_text);
+
         self
     }
 }

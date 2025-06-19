@@ -137,7 +137,7 @@ pub fn EvaluationResultView(evaluation_result: EvaluationResult) -> Element {
 
 #[cfg(test)]
 mod tests {
-    use dioxus_test_utils::{NodeWrapperAssertions, VirtualDomWrapper};
+    use dioxus_test_utils::{ElementWrapperAssertions, NodeWrapperAssertions, VirtualDomWrapper};
     use kernal::prelude::*;
     use model::check::modifier::{Aptitude, Modifier, ModifierAction, Reroll};
     use model::check::outcome::{
@@ -284,6 +284,6 @@ mod tests {
 
         let recommended_action_div = root_node.find_first(".info").unwrap();
 
-        assert_that!(&recommended_action_div.children()[0]).is_text(expected_text);
+        assert_that!(recommended_action_div).contains_only_text(expected_text);
     }
 }

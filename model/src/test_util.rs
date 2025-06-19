@@ -1,6 +1,11 @@
 use kernal::abs_diff::AbsDiff;
 
-use crate::check::outcome::SkillCheckOutcomeProbabilities;
+use crate::check::modifier::{Modifier, ModifierState};
+use crate::check::outcome::{
+    SkillCheckOutcome,
+    SkillCheckOutcomeKind,
+    SkillCheckOutcomeProbabilities,
+};
 use crate::evaluation::Evaluation;
 use crate::probability::Probability;
 
@@ -33,5 +38,24 @@ impl AbsDiff for SkillCheckOutcomeProbabilities {
             })
             .reduce(f64::max)
             .unwrap_or(0.0)
+    }
+}
+
+impl SkillCheckOutcomeKind {
+    pub fn with_modifiers(
+        self,
+        modifiers: impl IntoIterator<Item = Modifier>,
+    ) -> SkillCheckOutcome {
+        SkillCheckOutcome {
+            kind: self,
+            remaining_modifiers: ModifierState::from_modifiers(modifiers),
+        }
+    }
+
+    pub fn without_modifiers(self) -> SkillCheckOutcome {
+        SkillCheckOutcome {
+            kind: self,
+            remaining_modifiers: ModifierState::default(),
+        }
     }
 }

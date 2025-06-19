@@ -356,8 +356,7 @@ pub fn evaluate(expression: &Expression, outcome: &SkillCheckOutcome) -> Runtime
 #[cfg(test)]
 mod tests {
     use kernal::prelude::*;
-    use model::check::modifier::{Aptitude, Modifier, ModifierState};
-    use model::check::outcome::SkillCheckOutcomeKind;
+    use model::check::modifier::{Aptitude, Modifier};
     use model::check::outcome::SkillCheckOutcomeKind::*;
     use model::skill::{QualityLevel, SkillPoints};
     use rstest::rstest;
@@ -389,32 +388,6 @@ mod tests {
         let tokens = lexer::lex(code).unwrap();
         let ast = parser::parse(tokens).unwrap();
         analyze(ast).unwrap()
-    }
-
-    trait WithModifiers {
-        fn with_modifiers(self, modifiers: impl IntoIterator<Item = Modifier>)
-        -> SkillCheckOutcome;
-
-        fn without_modifiers(self) -> SkillCheckOutcome;
-    }
-
-    impl WithModifiers for SkillCheckOutcomeKind {
-        fn with_modifiers(
-            self,
-            modifiers: impl IntoIterator<Item = Modifier>,
-        ) -> SkillCheckOutcome {
-            SkillCheckOutcome {
-                kind: self,
-                remaining_modifiers: ModifierState::from_modifiers(modifiers),
-            }
-        }
-
-        fn without_modifiers(self) -> SkillCheckOutcome {
-            SkillCheckOutcome {
-                kind: self,
-                remaining_modifiers: ModifierState::default(),
-            }
-        }
     }
 
     fn aptitude(max_dice: usize) -> Modifier {

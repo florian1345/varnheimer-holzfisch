@@ -75,3 +75,123 @@ pub fn EvaluatedProbabilitiesView(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use dioxus_test_utils::{ElementWrapperAssertions, VirtualDomWrapper};
+    use kernal::prelude::*;
+    use model::check::modifier::Modifier;
+    use model::check::outcome::SkillCheckOutcome;
+    use model::check::outcome::SkillCheckOutcomeKind::*;
+    use model::evaluation::Evaluation;
+    use rstest::rstest;
+
+    use super::*;
+
+    fn mount(
+        evaluated_probabilities: Evaluated<SkillCheckOutcomeProbabilities>,
+    ) -> VirtualDomWrapper {
+        VirtualDomWrapper::new_with_props(
+            EvaluatedProbabilitiesView,
+            EvaluatedProbabilitiesViewProps {
+                evaluated_probabilities,
+            },
+        )
+    }
+
+    fn skill_check_outcome_probabilities(
+        outcome_probabilities: impl IntoIterator<Item = (SkillCheckOutcome, Probability)>,
+    ) -> SkillCheckOutcomeProbabilities {
+        outcome_probabilities
+            .into_iter()
+            .map(|(outcome, probability)| {
+                SkillCheckOutcomeProbabilities::of_known_outcome(outcome) * probability
+            })
+            .reduce(|mut lhs, rhs| {
+                lhs.saturating_add_assign(&rhs);
+                lhs
+            })
+            .unwrap_or_else(SkillCheckOutcomeProbabilities::default)
+    }
+
+    #[test]
+    fn displays_value() {
+        let vdom = mount(Evaluated {
+            evaluated: skill_check_outcome_probabilities([]),
+            evaluation: Evaluation::new(0.25).unwrap(),
+        });
+
+        let root_node = vdom.root_nodes()[0].clone().expect_element();
+
+        assert_that!(root_node.text_children()[0]).is_equal_to("Average value: 0.25");
+    }
+
+    fn prob(value: f64) -> Probability {
+        Probability::new(value).unwrap()
+    }
+
+    #[rstest]
+    #[case::all_zero([], [ "0.00", "0.00", "0.00", "0.00", "0.00", "0.00", "0.00" ])]
+    #[case::one_outcome_per_row(
+        [
+            (Failure.without_modifiers(), prob(0.1)),
+            (Success(QualityLevel::ONE).without_modifiers(), prob(0.2)),
+            (CriticalSuccess(QualityLevel::TWO).without_modifiers(), prob(0.3)),
+            (SpectacularSuccess(QualityLevel::THREE).without_modifiers(), prob(0.4)),
+            (Success(QualityLevel::FOUR).with_modifiers([Modifier::FatePoint]), prob(0.5)),
+            (Success(QualityLevel::FIVE).without_modifiers(), prob(0.6)),
+            (Success(QualityLevel::SIX).without_modifiers(), prob(0.7)),
+        ],
+        [ "10.00", "20.00", "30.00", "40.00", "50.00", "60.00", "70.00" ]
+    )]
+    #[case::multiple_outcomes_per_row(
+        [
+            (Failure.without_modifiers(), prob(0.0001)),
+            (CriticalFailure.without_modifiers(), prob(0.0002)),
+            (SpectacularFailure.without_modifiers(), prob(0.0003)),
+            (Failure.with_modifiers([Modifier::FatePoint]), prob(0.0005)),
+        ],
+        [ "0.11", "0.00", "0.00", "0.00", "0.00", "0.00", "0.00" ]
+    )]
+    fn displays_table(
+        #[case] outcome_probabilities: impl IntoIterator<Item = (SkillCheckOutcome, Probability)>,
+        #[case] expected_displayed_probabilities: [&'static str; 7],
+    ) {
+        const EXPECTED_OUTCOMES: [&str; 7] =
+            ["Failure", "QL 1", "QL 2", "QL 3", "QL 4", "QL 5", "QL 6"];
+
+        let vdom = mount(Evaluated {
+            evaluated: skill_check_outcome_probabilities(outcome_probabilities),
+            evaluation: Evaluation::new(0.25).unwrap(),
+        });
+
+        let root_node = vdom.root_nodes()[0].clone().expect_element();
+
+        eprintln!("{:?}", root_node.find_first("table > tr"));
+
+        let header_cells = root_node.find_all("table > tr > th");
+
+        assert_that!(&header_cells[0]).contains_only_text("Outcome");
+        assert_that!(&header_cells[1]).contains_only_text("Probability (%)");
+
+        let non_header_rows = root_node
+            .find_all("table > tr")
+            .into_iter()
+            .skip(1)
+            .collect::<Vec<_>>();
+
+        assert_that!(&non_header_rows).has_length(7);
+
+        let expected_rows = EXPECTED_OUTCOMES
+            .into_iter()
+            .zip(expected_displayed_probabilities);
+
+        for ((expected_outcome, expected_probability), row) in expected_rows.zip(non_header_rows) {
+            let cells = row.find_all("td");
+
+            assert_that!(&cells).has_length(2);
+            assert_that!(&cells[0]).contains_only_text(expected_outcome);
+            assert_that!(&cells[1]).contains_only_text(expected_probability);
+        }
+    }
+}
