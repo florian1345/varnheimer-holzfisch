@@ -39,7 +39,7 @@ pub const DEFAULT_SCHOLLE_CODE: &str =
 
 #[component]
 fn App() -> Element {
-    let mut skill_check_state_signal = use_signal(default_skill_check_state);
+    let skill_check_state_signal = use_signal(default_skill_check_state);
     let mut evaluator_signal = use_signal(|| ScholleEvaluator::new(DEFAULT_SCHOLLE_CODE).unwrap());
     let mut evaluation_result_signal: Signal<Option<EvaluationResult>> = use_signal(|| None);
 
@@ -55,8 +55,7 @@ fn App() -> Element {
         }
 
         SkillCheckStateForm {
-            skill_check_state: skill_check_state_signal.read().clone(),
-            onchange: move |new_state| skill_check_state_signal.set(new_state),
+            skill_check_state: skill_check_state_signal,
         }
 
         ScholleInput {

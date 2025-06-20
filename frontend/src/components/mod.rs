@@ -4,11 +4,3 @@ pub(crate) mod evaluation_result_view;
 pub(crate) mod flex_break;
 pub(crate) mod scholle_input;
 pub(crate) mod skill_check_state;
-
-#[macro_export]
-macro_rules! clone_env {
-    ($variable:ident -> $closure:expr) => {{
-        let $variable = $variable.clone();
-        $closure
-    }};
-}

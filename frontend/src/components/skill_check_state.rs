@@ -1,10 +1,12 @@
+use std::array;
+
 use dioxus::prelude::*;
-use model::check::PartialSkillCheckState;
-use model::check::modifier::{Aptitude, Modifier};
+use model::check::modifier::{Aptitude, Modifier, ModifierState};
+use model::check::{DICE_PER_SKILL_CHECK, PartialSkillCheckState};
 use model::roll::Roll;
 use model::skill;
+use model::skill::SkillPoints;
 
-use crate::clone_env;
 use crate::components::basic_fields::{
     AptitudeInput,
     AttributeInput,
@@ -13,34 +15,6 @@ use crate::components::basic_fields::{
     SkillPointsInput,
 };
 use crate::components::flex_break::FlexBreak;
-
-fn exchange_attribute(
-    state: &PartialSkillCheckState,
-    index: usize,
-    new_attribute: skill::Attribute,
-) -> PartialSkillCheckState {
-    let mut new_attributes = state.attributes;
-    new_attributes[index] = new_attribute;
-
-    PartialSkillCheckState {
-        attributes: new_attributes,
-        ..state.clone()
-    }
-}
-
-fn exchange_roll(
-    state: &PartialSkillCheckState,
-    index: usize,
-    new_roll: Option<Roll>,
-) -> PartialSkillCheckState {
-    let mut new_fixed_rolls = state.fixed_rolls;
-    new_fixed_rolls[index] = new_roll;
-
-    PartialSkillCheckState {
-        fixed_rolls: new_fixed_rolls,
-        ..state.clone()
-    }
-}
 
 fn get_aptitude(state: &PartialSkillCheckState) -> Option<Aptitude> {
     state.modifiers.available_modifiers().find_map(|modifier| {
@@ -53,117 +27,126 @@ fn get_aptitude(state: &PartialSkillCheckState) -> Option<Aptitude> {
     })
 }
 
-fn set_aptitude(state: &PartialSkillCheckState, value: Option<Aptitude>) -> PartialSkillCheckState {
-    let mut new_state = state.clone();
+fn compose_signals<T: Clone + PartialEq, const N: usize>(
+    input_signals: &[Signal<T>; N],
+    output_signal: &mut Signal<[T; N]>,
+    default: impl Fn() -> T,
+) {
+    let mut new_output = array::from_fn(|_| default());
 
-    while let Some(aptitude) = get_aptitude(&new_state) {
-        new_state.modifiers.consume(Modifier::Aptitude(aptitude));
+    for (index, attribute_signal) in input_signals.iter().enumerate() {
+        new_output[index] = attribute_signal();
     }
 
-    if let Some(aptitude) = value {
-        new_state.modifiers.add(Modifier::Aptitude(aptitude));
-    }
-
-    new_state
-}
-
-#[derive(PartialEq, Clone, Props)]
-pub struct SkillCheckStateFormProps {
-    skill_check_state: PartialSkillCheckState,
-    onchange: EventHandler<PartialSkillCheckState>,
+    output_signal.set(new_output);
 }
 
 #[component]
-pub fn SkillCheckStateForm(props: SkillCheckStateFormProps) -> Element {
+fn AttributesForm(attributes: Signal<[skill::Attribute; DICE_PER_SKILL_CHECK]>) -> Element {
+    let attribute_signals: [Signal<skill::Attribute>; DICE_PER_SKILL_CHECK] =
+        array::from_fn(|index| use_signal(|| attributes()[index]));
+
+    use_effect(move || {
+        compose_signals(&attribute_signals, &mut attributes, || {
+            skill::Attribute::new(0)
+        })
+    });
+
+    rsx! {
+        for index in 0..DICE_PER_SKILL_CHECK {
+            AttributeInput {
+                attribute: attribute_signals[index],
+            }
+        }
+    }
+}
+
+#[component]
+fn RollsForm(rolls: Signal<[Option<Roll>; DICE_PER_SKILL_CHECK]>) -> Element {
+    let roll_signals: [Signal<Option<Roll>>; DICE_PER_SKILL_CHECK] =
+        array::from_fn(|index| use_signal(|| rolls()[index]));
+
+    use_effect(move || compose_signals(&roll_signals, &mut rolls, || None));
+
+    rsx! {
+        for index in 0..DICE_PER_SKILL_CHECK {
+            RollInput {
+                roll: roll_signals[index],
+            }
+        }
+    }
+}
+
+#[component]
+pub fn SkillCheckStateForm(skill_check_state: Signal<PartialSkillCheckState>) -> Element {
+    let attributes_signal = use_signal(|| skill_check_state().attributes);
+    let skill_value_signal = use_signal(|| skill_check_state().skill_value);
+    let rolls_signal = use_signal(|| skill_check_state().fixed_rolls);
+    let fate_point_signal =
+        use_signal(|| skill_check_state().modifiers.count_of(Modifier::FatePoint));
+    let aptitude_signal = use_signal(|| get_aptitude(&skill_check_state()));
+
+    use_effect(move || {
+        let mut modifiers = ModifierState::default();
+
+        for _ in 0..fate_point_signal() {
+            modifiers.add(Modifier::FatePoint);
+        }
+
+        if let Some(aptitude) = aptitude_signal() {
+            modifiers.add(Modifier::Aptitude(aptitude));
+        }
+
+        skill_check_state.set(PartialSkillCheckState {
+            attributes: attributes_signal(),
+            roll_caps: [None; DICE_PER_SKILL_CHECK],
+            fixed_rolls: rolls_signal(),
+            skill_value: skill_value_signal(),
+            extra_quality_levels_on_success: None,
+            extra_skill_points_on_success: SkillPoints::new(0),
+            modifiers,
+            inaptitude: false,
+        });
+    });
+
     rsx! {
         div {
             class: "skill-check-state-form center-box",
 
             "Attributes",
 
-            AttributeInput {
-                attribute: props.skill_check_state.attributes[0],
-                onchange: clone_env! { props -> move |new_attribute| props.onchange.call(
-                    exchange_attribute(&props.skill_check_state, 0, new_attribute)
-                )},
-            },
-            AttributeInput {
-                attribute: props.skill_check_state.attributes[1],
-                onchange: clone_env! { props -> move |new_attribute| props.onchange.call(
-                    exchange_attribute(&props.skill_check_state, 1, new_attribute)
-                )},
-            },
-            AttributeInput {
-                attribute: props.skill_check_state.attributes[2],
-                onchange: clone_env! { props -> move |new_attribute| props.onchange.call(
-                    exchange_attribute(&props.skill_check_state, 2, new_attribute)
-                )},
+            AttributesForm {
+                attributes: attributes_signal,
             },
 
             "Skill Value",
 
             SkillPointsInput {
-                skill_points: props.skill_check_state.skill_value,
-                onchange: clone_env! { props -> move |new_skill_value| props.onchange.call(
-                    PartialSkillCheckState {
-                        skill_value: new_skill_value,
-                        ..props.skill_check_state.clone()
-                    }
-                )}
+                skill_points: skill_value_signal,
             },
 
             FlexBreak {},
 
             "Roll",
 
-            RollInput {
-                roll: props.skill_check_state.fixed_rolls[0],
-                onchange: clone_env! { props -> move |new_roll| props.onchange.call(
-                    exchange_roll(&props.skill_check_state, 0, new_roll)
-                )},
-            },
-            RollInput {
-                roll: props.skill_check_state.fixed_rolls[1],
-                onchange: clone_env! { props -> move |new_roll| props.onchange.call(
-                    exchange_roll(&props.skill_check_state, 1, new_roll)
-                )},
-            },
-            RollInput {
-                roll: props.skill_check_state.fixed_rolls[2],
-                onchange: clone_env! { props -> move |new_roll| props.onchange.call(
-                    exchange_roll(&props.skill_check_state, 2, new_roll)
-                )},
+            RollsForm {
+                rolls: rolls_signal,
             },
 
             FlexBreak {},
 
+            // TODO adapt the UI to represent the domain model more (list of modifiers)
+
             "Fate Points",
 
             FatePointInput {
-                fate_point_count: props.skill_check_state.modifiers.count_of(Modifier::FatePoint),
-                onchange: clone_env! { props -> move |new_fate_point_count| {
-                    // TODO adapt the UI to represent the domain model more (list of modifiers)
-                    let mut new_state = props.skill_check_state.clone();
-
-                    while new_state.modifiers.count_of(Modifier::FatePoint) < new_fate_point_count {
-                        new_state.modifiers.add(Modifier::FatePoint);
-                    }
-
-                    while new_state.modifiers.count_of(Modifier::FatePoint) > new_fate_point_count {
-                        new_state.modifiers.consume(Modifier::FatePoint);
-                    }
-
-                    props.onchange.call(new_state)
-                }}
+                fate_point_count: fate_point_signal,
             },
 
             "Aptitude Dice",
 
             AptitudeInput {
-                aptitude: get_aptitude(&props.skill_check_state),
-                onchange: clone_env! { props -> move |new_aptitude|
-                    props.onchange.call(set_aptitude(&props.skill_check_state, new_aptitude))
-                },
+                aptitude: aptitude_signal,
             }
         }
     }
