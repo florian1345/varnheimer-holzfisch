@@ -1,4 +1,6 @@
+use std::fmt::Display;
 use std::num::NonZeroUsize;
+use std::str::FromStr;
 
 use dioxus::prelude::*;
 use model::check::modifier::Aptitude;
@@ -6,44 +8,155 @@ use model::roll::Roll;
 use model::skill;
 use model::skill::SkillPoints;
 
+pub trait Int:
+    Clone + Copy + Display + Eq + FromStr + Ord + PartialEq + PartialOrd + 'static
+{
+    fn saturating_dec(self) -> Self;
+
+    fn saturating_inc(self) -> Self;
+}
+
+macro_rules! impl_int {
+    ($typ:ty) => {
+        impl Int for $typ {
+            fn saturating_dec(self) -> Self {
+                self.saturating_sub(1)
+            }
+
+            fn saturating_inc(self) -> Self {
+                self.saturating_add(1)
+            }
+        }
+    };
+}
+
+impl_int!(u8);
+impl_int!(usize);
+impl_int!(i32);
+
+fn clamp<T: Int>(mut value: T, min: Option<T>, max: Option<T>) -> T {
+    value = min.map(|min| value.max(min)).unwrap_or(value);
+    value = max.map(|max| value.min(max)).unwrap_or(value);
+    value
+}
+
+#[component]
+pub fn NumberInput<T: Int>(
+    value: Signal<T>,
+    min: Option<T>,
+    max: Option<T>,
+    class: Option<String>,
+) -> Element {
+    let mut text_value = use_signal(|| value().to_string());
+
+    use_effect(move || {
+        let mut text_value = text_value();
+
+        if text_value.is_empty() {
+            text_value.push('0');
+        }
+
+        if let Ok(parsed_value) = text_value.parse::<T>() {
+            value.set(clamp(parsed_value, min, max));
+        }
+    });
+
+    rsx! {
+        div {
+            class: {
+                if let Some(class) = class {
+                    format!("number-input {class}")
+                }
+                else {
+                    "number-input".to_owned()
+                }
+            },
+
+            input {
+                onblur: move |_| {
+                    text_value.set(value().to_string());
+                },
+
+                oninput: move |event| {
+                    text_value.set(event.value());
+                },
+
+                value: text_value,
+            }
+
+            span {
+                class: "number-input-buttons",
+
+                div {
+                    button {
+                        onclick: move |_| {
+                            // Sets value in use_effect
+                            let new_value = clamp(value().saturating_inc(), min, max);
+                            text_value.set(new_value.to_string());
+                        },
+
+                        "⯅"
+                    }
+
+                    button {
+                        onclick: move |_| {
+                            // Sets value in use_effect
+                            let new_value = clamp(value().saturating_dec(), min, max);
+                            text_value.set(new_value.to_string());
+                        },
+
+                        "⯆"
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[component]
 pub fn RollInput(roll: Signal<Option<Roll>>) -> Element {
+    let roll_number = use_signal(|| roll().map(Roll::as_u8).unwrap_or(0));
+
+    use_effect(move || roll.set(Roll::new(roll_number())));
+
     rsx! {
-        input {
-            type: "number",
-            min: "0",
-            max: "20",
-            value: roll().map(Roll::as_u8).unwrap_or(0),
-            onchange: move |event|
-                roll.set(Roll::new(event.parsed::<u8>().unwrap())),
+        NumberInput::<u8> {
+            class: "small-input",
+            min: 0,
+            max: 20,
+            value: roll_number,
         }
     }
 }
 
 #[component]
 pub fn AttributeInput(attribute: Signal<skill::Attribute>) -> Element {
+    let attribute_number = use_signal(|| attribute().as_i32());
+
+    use_effect(move || attribute.set(skill::Attribute::new(attribute_number())));
+
     rsx! {
-        input {
-            type: "number",
-            min: "0",
-            max: "20",
-            value: attribute().as_i32(),
-            onchange: move |event|
-                attribute.set(skill::Attribute::new(event.parsed::<i32>().unwrap())),
+        NumberInput::<i32> {
+            class: "small-input",
+            min: 0,
+            max: 20,
+            value: attribute_number,
         }
     }
 }
 
 #[component]
 pub fn SkillPointsInput(skill_points: Signal<SkillPoints>) -> Element {
+    let skill_points_number = use_signal(|| skill_points().as_i32());
+
+    use_effect(move || skill_points.set(SkillPoints::new(skill_points_number())));
+
     rsx! {
-        input {
-            type: "number",
-            min: "0",
-            max: "100",
-            value: skill_points().as_i32(),
-            onchange: move |event|
-                skill_points.set(SkillPoints::new(event.parsed::<i32>().unwrap())),
+        NumberInput::<i32> {
+            class: "small-input",
+            min: 0,
+            max: 100,
+            value: skill_points_number,
         }
     }
 }
@@ -51,27 +164,32 @@ pub fn SkillPointsInput(skill_points: Signal<SkillPoints>) -> Element {
 #[component]
 pub fn FatePointInput(fate_point_count: Signal<usize>) -> Element {
     rsx! {
-        input {
-            type: "number",
-            min: "0",
-            max: "6",
-            value: fate_point_count(),
-            onchange: move |event|
-                fate_point_count.set(event.parsed::<usize>().unwrap()),
+        NumberInput::<usize> {
+            class: "small-input",
+            min: 0,
+            max: 6,
+            value: fate_point_count,
         }
     }
 }
 
 #[component]
 pub fn AptitudeInput(aptitude: Signal<Option<Aptitude>>) -> Element {
+    let aptitude_number = use_signal(|| {
+        aptitude()
+            .map(Aptitude::max_dice)
+            .map(NonZeroUsize::get)
+            .unwrap_or(0)
+    });
+
+    use_effect(move || aptitude.set(Aptitude::new(aptitude_number())));
+
     rsx! {
-        input {
-            type: "number",
-            min: "0",
-            max: "2",
-            value: aptitude().map(Aptitude::max_dice).map(NonZeroUsize::get).unwrap_or(0),
-            onchange: move |event|
-                aptitude.set(Aptitude::new(event.parsed::<usize>().unwrap()))
+        NumberInput::<usize> {
+            class: "small-input",
+            min: 0,
+            max: 2,
+            value: aptitude_number,
         }
     }
 }

@@ -66,6 +66,8 @@ fn App() -> Element {
             class: "center-box",
 
             button {
+                class: "evaluate-button",
+
                 onclick: move |_| {
                     let partial_state = &*skill_check_state_signal.read();
                     let evaluator = &*evaluator_signal.read();

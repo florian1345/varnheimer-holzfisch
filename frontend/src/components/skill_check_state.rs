@@ -56,6 +56,7 @@ fn AttributesForm(attributes: Signal<[skill::Attribute; DICE_PER_SKILL_CHECK]>) 
         for index in 0..DICE_PER_SKILL_CHECK {
             AttributeInput {
                 attribute: attribute_signals[index],
+                key: "attribute-{index}",
             }
         }
     }
@@ -72,6 +73,7 @@ fn RollsForm(rolls: Signal<[Option<Roll>; DICE_PER_SKILL_CHECK]>) -> Element {
         for index in 0..DICE_PER_SKILL_CHECK {
             RollInput {
                 roll: roll_signals[index],
+                key: "roll-{index}",
             }
         }
     }
