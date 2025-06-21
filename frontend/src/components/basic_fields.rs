@@ -11,6 +11,8 @@ use model::skill::SkillPoints;
 pub trait Int:
     Clone + Copy + Display + Eq + FromStr + Ord + PartialEq + PartialOrd + 'static
 {
+    fn is_zero(self) -> bool;
+
     fn saturating_dec(self) -> Self;
 
     fn saturating_inc(self) -> Self;
@@ -19,6 +21,10 @@ pub trait Int:
 macro_rules! impl_int {
     ($typ:ty) => {
         impl Int for $typ {
+            fn is_zero(self) -> bool {
+                self == 0
+            }
+
             fn saturating_dec(self) -> Self {
                 self.saturating_sub(1)
             }
@@ -40,14 +46,24 @@ fn clamp<T: Int>(mut value: T, min: Option<T>, max: Option<T>) -> T {
     value
 }
 
+fn to_string<T: Int>(value: T, zero_as_empty: bool) -> String {
+    if zero_as_empty && value.is_zero() {
+        String::new()
+    }
+    else {
+        value.to_string()
+    }
+}
+
 #[component]
 pub fn NumberInput<T: Int>(
     value: Signal<T>,
     min: Option<T>,
     max: Option<T>,
     class: Option<String>,
+    #[props(default = false)] zero_as_empty: bool,
 ) -> Element {
-    let mut text_value = use_signal(|| value().to_string());
+    let mut text_value = use_signal(|| to_string(value(), zero_as_empty));
 
     use_effect(move || {
         let mut text_value = text_value();
@@ -74,7 +90,7 @@ pub fn NumberInput<T: Int>(
 
             input {
                 onblur: move |_| {
-                    text_value.set(value().to_string());
+                    text_value.set(to_string(value(), zero_as_empty));
                 },
 
                 oninput: move |event| {
@@ -92,7 +108,7 @@ pub fn NumberInput<T: Int>(
                         onclick: move |_| {
                             // Sets value in use_effect
                             let new_value = clamp(value().saturating_inc(), min, max);
-                            text_value.set(new_value.to_string());
+                            text_value.set(to_string(new_value, zero_as_empty));
                         },
 
                         "⯅"
@@ -102,7 +118,7 @@ pub fn NumberInput<T: Int>(
                         onclick: move |_| {
                             // Sets value in use_effect
                             let new_value = clamp(value().saturating_dec(), min, max);
-                            text_value.set(new_value.to_string());
+                            text_value.set(to_string(new_value, zero_as_empty));
                         },
 
                         "⯆"
@@ -125,6 +141,7 @@ pub fn RollInput(roll: Signal<Option<Roll>>) -> Element {
             min: 0,
             max: 20,
             value: roll_number,
+            zero_as_empty: true,
         }
     }
 }
