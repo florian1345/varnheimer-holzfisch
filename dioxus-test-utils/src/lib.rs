@@ -1,29 +1,46 @@
 mod select;
 
+use std::any::Any;
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fmt;
-use std::fmt::{Debug, Write};
+use std::fmt::{Debug, Formatter, Write};
 use std::ops::{Index, IndexMut};
+use std::rc::Rc;
 
 use dioxus_core::{
     AttributeValue,
     ComponentFunction,
     ElementId,
+    Event,
     Template,
     TemplateAttribute,
     TemplateNode,
     VirtualDom,
     WriteMutations,
 };
+use dioxus_html::geometry::{ClientPoint, Coordinates, ElementPoint, PagePoint, ScreenPoint};
+use dioxus_html::input_data::{MouseButton, MouseButtonSet};
+use dioxus_html::prelude::Modifiers;
+use dioxus_html::{PlatformEventData, SerializedHtmlEventConverter, SerializedMouseData};
 use kernal::prelude::*;
 use kernal::{AssertThat, AssertThatData};
 use slab::Slab;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct NodeRef<'dom> {
     id: NodeId,
     nodes: &'dom Nodes,
+    vdom: &'dom VirtualDom,
+}
+
+impl Debug for NodeRef<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_map()
+            .entry(&"id", &self.id)
+            .entry(&"nodes", &self.nodes)
+            .finish()
+    }
 }
 
 fn expect_text(value: &AttributeValue) -> &str {
@@ -82,10 +99,7 @@ impl<'dom> NodeRef<'dom> {
                     indent.push_str(INDENT_PER_LEVEL);
 
                     for &id in children {
-                        let child = NodeRef {
-                            id,
-                            nodes: self.nodes,
-                        };
+                        let child = NodeRef { id, ..self };
                         child.write_html(html, indent)?;
                         writeln!(html)?;
                     }
@@ -170,10 +184,7 @@ impl<'dom> NodeRef<'dom> {
             children
                 .iter()
                 .copied()
-                .map(|child_id| NodeRef {
-                    id: child_id,
-                    nodes: self.nodes,
-                })
+                .map(|id| NodeRef { id, ..self })
                 .collect()
         }
         else {
@@ -190,6 +201,27 @@ impl<'dom> NodeRef<'dom> {
 
     pub fn parent(self) -> Option<NodeRef<'dom>> {
         self.node().parent.map(|id| NodeRef { id, ..self })
+    }
+
+    pub fn click(self) {
+        let mouse_data = SerializedMouseData::new(
+            Some(MouseButton::Primary),
+            MouseButtonSet::default(),
+            Coordinates::new(
+                ScreenPoint::default(),
+                ClientPoint::default(),
+                ElementPoint::default(),
+                PagePoint::default(),
+            ),
+            Modifiers::default(),
+        );
+        let platform_event_data = PlatformEventData::new(Box::new(mouse_data));
+        let event = Event::new(Rc::new(platform_event_data) as Rc<dyn Any>, true);
+        let element_id = self
+            .nodes
+            .get_element_id(self.id)
+            .expect("cannot handle event for node without element ID");
+        self.vdom.runtime().handle_event("click", event, element_id);
     }
 }
 
@@ -265,16 +297,20 @@ impl Nodes {
         self.nodes.get_mut(id.0)
     }
 
-    fn get_element_id(&self, id: ElementId) -> Option<NodeId> {
+    fn get_element_id(&self, id: NodeId) -> Option<ElementId> {
+        self.node_to_element_ids.get(&id).cloned()
+    }
+
+    fn get_node_id(&self, id: ElementId) -> Option<NodeId> {
         self.element_to_node_ids.get(&id).copied()
     }
 
     fn get_element(&self, id: ElementId) -> Option<&Node> {
-        self.get_element_id(id).and_then(|id| self.get(id))
+        self.get_node_id(id).and_then(|id| self.get(id))
     }
 
     fn get_element_mut(&mut self, id: ElementId) -> Option<&mut Node> {
-        self.get_element_id(id).and_then(|id| self.get_mut(id))
+        self.get_node_id(id).and_then(|id| self.get_mut(id))
     }
 
     fn insert(&mut self, node: Node) -> NodeId {
@@ -471,7 +507,7 @@ impl WriteMutations for ElementWriter {
     fn append_children(&mut self, id: ElementId, m: usize) {
         let id = self
             .nodes
-            .get_element_id(id)
+            .get_node_id(id)
             .expect("appending children to non-existing node");
         let mut to_append = self.pop_many(m);
 
@@ -509,7 +545,7 @@ impl WriteMutations for ElementWriter {
     fn replace_node_with(&mut self, id: ElementId, m: usize) {
         let replaced_node = self
             .nodes
-            .get_element_id(id)
+            .get_node_id(id)
             .expect("replacing non-existing element");
         let replacement_nodes = self.pop_many(m);
         self.replace(replaced_node, replacement_nodes);
@@ -524,7 +560,7 @@ impl WriteMutations for ElementWriter {
     fn insert_nodes_after(&mut self, id: ElementId, m: usize) {
         let anchor_node = self
             .nodes
-            .get_element_id(id)
+            .get_node_id(id)
             .expect("inserting after non-existing element");
         let inserted_nodes = self.pop_many(m);
 
@@ -534,7 +570,7 @@ impl WriteMutations for ElementWriter {
     fn insert_nodes_before(&mut self, id: ElementId, m: usize) {
         let anchor_node = self
             .nodes
-            .get_element_id(id)
+            .get_node_id(id)
             .expect("inserting before non-existing element");
         let inserted_nodes = self.pop_many(m);
 
@@ -585,7 +621,7 @@ impl WriteMutations for ElementWriter {
     fn remove_node(&mut self, id: ElementId) {
         let removed_node = self
             .nodes
-            .get_element_id(id)
+            .get_node_id(id)
             .expect("removing non-existing element");
         self.nodes.remove(removed_node);
     }
@@ -593,13 +629,14 @@ impl WriteMutations for ElementWriter {
     fn push_root(&mut self, id: ElementId) {
         let node_id = self
             .nodes
-            .get_element_id(id)
+            .get_node_id(id)
             .expect("pushing non-existing element");
         self.stack.push(node_id);
     }
 }
 
 pub struct VirtualDomWrapper {
+    virtual_dom: VirtualDom,
     element_writer: ElementWriter,
 }
 
@@ -608,11 +645,20 @@ impl VirtualDomWrapper {
         root: impl ComponentFunction<P, M>,
         root_props: P,
     ) -> VirtualDomWrapper {
+        dioxus_html::events::set_event_converter(Box::new(SerializedHtmlEventConverter));
+
         let mut virtual_dom = VirtualDom::new_with_props(root, root_props);
         let mut element_writer = ElementWriter::new();
         virtual_dom.rebuild(&mut element_writer);
 
-        VirtualDomWrapper { element_writer }
+        VirtualDomWrapper {
+            virtual_dom,
+            element_writer,
+        }
+    }
+
+    pub fn update(&mut self) {
+        self.virtual_dom.render_immediate(&mut self.element_writer);
     }
 
     pub fn root_nodes(&self) -> Vec<NodeRef<'_>> {
@@ -623,8 +669,22 @@ impl VirtualDomWrapper {
             .map(|id| NodeRef {
                 id,
                 nodes: &self.element_writer.nodes,
+                vdom: &self.virtual_dom,
             })
             .collect()
+    }
+
+    pub fn root_node(&self) -> NodeRef<'_> {
+        let root_nodes = self.root_nodes();
+
+        assert_eq!(
+            root_nodes.len(),
+            1,
+            "expected singular root node, but found {}",
+            root_nodes.len()
+        );
+
+        root_nodes[0]
     }
 }
 
@@ -637,6 +697,8 @@ pub trait NodeRefAssertions {
     fn has_exactly_classes(self, classes: impl IntoIterator<Item = impl AsRef<str>>) -> Self;
 
     fn contains_only_text(self, expected_text: impl AsRef<str>) -> Self;
+
+    fn has_attribute(self, name: impl AsRef<str>, value: impl AsRef<str>) -> Self;
 }
 
 impl<'dom, N: Borrow<NodeRef<'dom>>> NodeRefAssertions for AssertThat<N> {
@@ -667,6 +729,26 @@ impl<'dom, N: Borrow<NodeRef<'dom>>> NodeRefAssertions for AssertThat<N> {
 
         assert_that!(&children).has_length(1);
         assert_that!(&children[0]).is_text(expected_text);
+
+        self
+    }
+
+    fn has_attribute(self, name: impl AsRef<str>, value: impl AsRef<str>) -> Self {
+        let node = *self.data().borrow();
+        let expected_name = name.as_ref();
+        let expected_value = value.as_ref();
+
+        assert_that!(node.attributes()).contains_elements_matching(|(key, value)| {
+            let key_matches = key.name == expected_name && key.namespace.is_none();
+            let value_matches = if let AttributeValue::Text(text) = value {
+                text.as_str() == expected_value
+            }
+            else {
+                false
+            };
+
+            key_matches && value_matches
+        });
 
         self
     }

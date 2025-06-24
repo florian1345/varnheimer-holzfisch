@@ -210,3 +210,63 @@ pub fn AptitudeInput(aptitude: Signal<Option<Aptitude>>) -> Element {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use dioxus_test_utils::{NodeRefAssertions, VirtualDomWrapper};
+    use kernal::prelude::*;
+
+    use super::*;
+
+    fn mount_number_input<T: Int>(
+        value: T,
+        min: Option<T>,
+        max: Option<T>,
+        class: Option<String>,
+        zero_as_empty: bool,
+    ) -> VirtualDomWrapper {
+        #[component]
+        fn Wrapper<T: Int>(
+            value: T,
+            min: Option<T>,
+            max: Option<T>,
+            class: Option<String>,
+            zero_as_empty: bool,
+        ) -> Element {
+            let value = use_signal(|| value);
+
+            rsx! {
+                NumberInput::<T> {
+                    value: value,
+                    min: min,
+                    max: max,
+                    class: class,
+                    zero_as_empty: zero_as_empty,
+                }
+            }
+        }
+
+        VirtualDomWrapper::new_with_props(
+            Wrapper::<T>,
+            WrapperProps {
+                value,
+                min,
+                max,
+                class,
+                zero_as_empty,
+            },
+        )
+    }
+
+    #[test]
+    fn number_input_increment_button() {
+        let mut vdom = mount_number_input(0usize, None, None, None, false);
+
+        assert_that!(vdom.root_node().find("input")).has_attribute("value", "0");
+
+        vdom.root_node().find_all("button")[0].click();
+        vdom.update();
+
+        assert_that!(vdom.root_node().find("input")).has_attribute("value", "1");
+    }
+}
