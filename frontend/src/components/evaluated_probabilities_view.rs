@@ -78,7 +78,7 @@ pub fn EvaluatedProbabilitiesView(
 
 #[cfg(test)]
 mod tests {
-    use dioxus_test_utils::{NodeRefAssertions, VirtualDomWrapper};
+    use dioxus_test_utils::{Find, NodeRefAssertions, TestDom};
     use kernal::prelude::*;
     use model::check::modifier::Modifier;
     use model::check::outcome::SkillCheckOutcome;
@@ -88,10 +88,8 @@ mod tests {
 
     use super::*;
 
-    fn mount(
-        evaluated_probabilities: Evaluated<SkillCheckOutcomeProbabilities>,
-    ) -> VirtualDomWrapper {
-        VirtualDomWrapper::new_with_props(
+    fn mount(evaluated_probabilities: Evaluated<SkillCheckOutcomeProbabilities>) -> TestDom {
+        TestDom::new_with_props(
             EvaluatedProbabilitiesView,
             EvaluatedProbabilitiesViewProps {
                 evaluated_probabilities,
@@ -116,14 +114,12 @@ mod tests {
 
     #[test]
     fn displays_value() {
-        let vdom = mount(Evaluated {
+        let dom = mount(Evaluated {
             evaluated: skill_check_outcome_probabilities([]),
             evaluation: Evaluation::new(0.25).unwrap(),
         });
 
-        let root_node = vdom.root_nodes()[0].clone();
-
-        assert_that!(root_node.text_children()[0]).is_equal_to("Average value: 0.25");
+        assert_that!(dom.find("div.info").text_children()[0]).is_equal_to("Average value: 0.25");
     }
 
     fn prob(value: f64) -> Probability {
@@ -160,19 +156,17 @@ mod tests {
         const EXPECTED_OUTCOMES: [&str; 7] =
             ["Failure", "QL 1", "QL 2", "QL 3", "QL 4", "QL 5", "QL 6"];
 
-        let vdom = mount(Evaluated {
+        let dom = mount(Evaluated {
             evaluated: skill_check_outcome_probabilities(outcome_probabilities),
             evaluation: Evaluation::new(0.25).unwrap(),
         });
 
-        let root_node = vdom.root_nodes()[0].clone();
-
-        let header_cells = root_node.find_all("table > tr > th");
+        let header_cells = dom.find_all("table > tr > th");
 
         assert_that!(&header_cells[0]).contains_only_text("Outcome");
         assert_that!(&header_cells[1]).contains_only_text("Probability (%)");
 
-        let non_header_rows = root_node
+        let non_header_rows = dom
             .find_all("table > tr")
             .into_iter()
             .skip(1)

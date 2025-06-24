@@ -137,7 +137,7 @@ pub fn EvaluationResultView(evaluation_result: EvaluationResult) -> Element {
 
 #[cfg(test)]
 mod tests {
-    use dioxus_test_utils::{NodeRefAssertions, VirtualDomWrapper};
+    use dioxus_test_utils::{Find, NodeRefAssertions, TestDom};
     use kernal::prelude::*;
     use model::check::modifier::{Aptitude, Modifier, ModifierAction, Reroll};
     use model::check::outcome::{
@@ -153,8 +153,8 @@ mod tests {
     use super::*;
     use crate::evaluate::EvaluationOutcome;
 
-    fn mount(evaluation_result: EvaluationResult) -> VirtualDomWrapper {
-        VirtualDomWrapper::new_with_props(
+    fn mount(evaluation_result: EvaluationResult) -> TestDom {
+        TestDom::new_with_props(
             EvaluationResultView,
             EvaluationResultViewProps { evaluation_result },
         )
@@ -162,22 +162,21 @@ mod tests {
 
     #[test]
     fn displays_error() {
-        let vdom = mount(Err(RuntimeError {
+        let dom = mount(Err(RuntimeError {
             kind: RuntimeErrorKind::ArithmeticOverflow,
             span: (28..79).into(),
         }));
 
-        let root_node = vdom.root_nodes()[0];
-        let error_div = root_node.find("div.center-box > div.error");
+        let error_div = dom.find("div.center-box > div.error");
 
         assert_that!(&error_div.children()[0])
             .is_text("arithmetic operation caused overflow @ 28..79");
-        assert_that!(root_node.try_find("div.info")).is_none();
+        assert_that!(dom.try_find("div.info")).is_none();
     }
 
     #[test]
     fn displays_evaluation_without_recommended_action() {
-        let vdom = mount(Ok(EvaluationOutcome {
+        let dom = mount(Ok(EvaluationOutcome {
             recommended_action: None,
             evaluated_probabilities: Evaluated {
                 evaluated: always_failure(),
@@ -185,13 +184,12 @@ mod tests {
             },
         }));
 
-        let root_node = vdom.root_nodes()[0];
-        let info_div = root_node.find("div.center-box > div.info");
+        let info_div = dom.find("div.center-box > div.info");
 
         // We are content with only checking the existence of an EvaluatedProbabilitiesView.
         // Table content will be tested in its own test.
         assert_that!(&info_div.children()[0]).is_text("Average value: 0.25");
-        assert_that!(root_node.try_find("div.error")).is_none();
+        assert_that!(dom.try_find("div.error")).is_none();
     }
 
     fn always_failure() -> SkillCheckOutcomeProbabilities {
@@ -204,73 +202,73 @@ mod tests {
     #[rstest]
     #[case::accept(SkillCheckAction::Accept, "Recommendation: Accept")]
     #[case::fate_point_reroll_single_die(
-        SkillCheckAction::ConsumeModifier {
+        SkillCheckAction::ConsumeModifier{
             modifier: Modifier::FatePoint,
             action: ModifierAction::RerollByFate(Reroll::new([false, true, false]).unwrap()),
-        },
+            },
         "Recommendation: Use fate point to reroll die 2",
     )]
     #[case::fate_point_reroll_two_dice(
-        SkillCheckAction::ConsumeModifier {
+        SkillCheckAction::ConsumeModifier{
             modifier: Modifier::FatePoint,
             action: ModifierAction::RerollByFate(Reroll::new([true, false, true]).unwrap()),
-        },
+            },
         "Recommendation: Use fate point to reroll dice 1 and 3",
     )]
     #[case::fate_point_reroll_all_dice(
         SkillCheckAction::ConsumeModifier{
             modifier: Modifier::FatePoint,
             action: ModifierAction::RerollByFate(Reroll::new([true, true, true]).unwrap()),
-        },
+            },
         "Recommendation: Use fate point to reroll dice 1, 2, and 3",
     )]
     #[case::fate_point_increase_quality_level(
-        SkillCheckAction::ConsumeModifier {
+        SkillCheckAction::ConsumeModifier{
             modifier: Modifier::FatePoint,
             action: ModifierAction::IncreaseQualityLevel,
-        },
+            },
         "Recommendation: Use fate point to increase quality level",
     )]
     #[case::aptitude_reroll_single_die(
-        SkillCheckAction::ConsumeModifier {
+        SkillCheckAction::ConsumeModifier{
             modifier: Modifier::Aptitude(Aptitude::new(1).unwrap()),
             action: ModifierAction::RerollByAptitude(Reroll::new([true, false, false]).unwrap()),
-        },
+            },
         "Recommendation: Use aptitude to reroll die 1",
     )]
     #[case::aptitude_reroll_two_dice(
-        SkillCheckAction::ConsumeModifier {
+        SkillCheckAction::ConsumeModifier{
             modifier: Modifier::Aptitude(Aptitude::new(2).unwrap()),
             action: ModifierAction::RerollByAptitude(Reroll::new([false, true, true]).unwrap()),
-        },
+            },
         "Recommendation: Use aptitude to reroll dice 2 and 3",
     )]
     #[case::extra_skill_points(
-        SkillCheckAction::ConsumeModifier {
+        SkillCheckAction::ConsumeModifier{
             modifier: Modifier::ExtraSkillPoints(SkillPoints::new(2)),
             action: ModifierAction::IncreaseSkillPoints(SkillPoints::new(2)),
-        },
+            },
         "Recommendation: Use 2 extra skill points",
     )]
     #[case::extra_skill_points_on_success(
-        SkillCheckAction::ConsumeModifier {
+        SkillCheckAction::ConsumeModifier{
             modifier: Modifier::ExtraSkillPointsOnSuccess(SkillPoints::new(2)),
             action: ModifierAction::IncreaseSkillPointsOnSuccess(SkillPoints::new(2)),
-        },
+            },
         "Recommendation: Use 2 extra skill points on success",
     )]
     #[case::extra_quality_level_on_success(
-        SkillCheckAction::ConsumeModifier {
+        SkillCheckAction::ConsumeModifier{
             modifier: Modifier::ExtraQualityLevelOnSuccess,
             action: ModifierAction::IncreaseQualityLevel,
-        },
+            },
         "Recommendation: Use extra quality level on success",
     )]
     fn displays_recommended_action(
         #[case] recommended_action: SkillCheckAction,
         #[case] expected_text: &str,
     ) {
-        let vdom = mount(Ok(EvaluationOutcome {
+        let dom = mount(Ok(EvaluationOutcome {
             recommended_action: Some(recommended_action),
             evaluated_probabilities: Evaluated {
                 evaluated: always_failure(),
@@ -278,11 +276,9 @@ mod tests {
             },
         }));
 
-        let root_node = vdom.root_nodes()[0].clone();
+        assert_that!(dom.find("div.center-box").children()).has_length(2);
 
-        assert_that!(root_node.children()).has_length(2);
-
-        let recommended_action_div = root_node.find_first(".info").unwrap();
+        let recommended_action_div = dom.find_first(".info").unwrap();
 
         assert_that!(recommended_action_div).contains_only_text(expected_text);
     }

@@ -19,7 +19,7 @@ use selectors::parser::{NonTSPseudoClass, Selector, SelectorParseErrorKind};
 use selectors::{Element, OpaqueElement, SelectorImpl, matching, parser};
 use string_cache::{Atom, EmptyStaticAtomSet};
 
-use crate::NodeRef;
+use crate::{NodeRef, TestDom};
 
 #[derive(Clone, Default, Eq, PartialEq)]
 pub struct CssName(Atom<EmptyStaticAtomSet>);
@@ -303,8 +303,43 @@ fn parse_selector(selector: &str) -> Selector<ElementWrapperSelectorImpl> {
     Selector::parse(&Parser, &mut parser).unwrap()
 }
 
-impl<'dom> NodeRef<'dom> {
-    pub fn find_all(self, selector: &str) -> Vec<NodeRef<'dom>> {
+pub trait Find<'dom>: Sized {
+    fn find_all(self, selector: &str) -> Vec<NodeRef<'dom>>;
+
+    fn try_find(self, selector: &str) -> Option<NodeRef<'dom>> {
+        let all_matches = self.find_all(selector);
+
+        assert!(
+            all_matches.len() <= 1,
+            "expected selector `{}` to find at most 1 match, but it found {}",
+            selector,
+            all_matches.len()
+        );
+
+        all_matches.into_iter().next()
+    }
+
+    fn find(self, selector: &str) -> NodeRef<'dom> {
+        let all_matches = self.find_all(selector);
+
+        assert_eq!(
+            all_matches.len(),
+            1,
+            "expected selector `{}` to find exactly 1 match, but it found {}",
+            selector,
+            all_matches.len()
+        );
+
+        all_matches.into_iter().next().unwrap()
+    }
+
+    fn find_first(self, selector: &str) -> Option<NodeRef<'dom>> {
+        self.find_all(selector).into_iter().next()
+    }
+}
+
+impl<'dom> Find<'dom> for NodeRef<'dom> {
+    fn find_all(self, selector: &str) -> Vec<NodeRef<'dom>> {
         let selector = parse_selector(selector);
         let mut caches = Default::default();
         let mut context = MatchingContext::new(
@@ -336,35 +371,10 @@ impl<'dom> NodeRef<'dom> {
 
         matches
     }
+}
 
-    pub fn try_find(self, selector: &str) -> Option<NodeRef<'dom>> {
-        let all_matches = self.find_all(selector);
-
-        assert!(
-            all_matches.len() <= 1,
-            "expected selector `{}` to find at most 1 match, but it found {}",
-            selector,
-            all_matches.len()
-        );
-
-        all_matches.into_iter().next()
-    }
-
-    pub fn find(self, selector: &str) -> NodeRef<'dom> {
-        let all_matches = self.find_all(selector);
-
-        assert_eq!(
-            all_matches.len(),
-            1,
-            "expected selector `{}` to find exactly 1 match, but it found {}",
-            selector,
-            all_matches.len()
-        );
-
-        all_matches.into_iter().next().unwrap()
-    }
-
-    pub fn find_first(self, selector: &str) -> Option<NodeRef<'dom>> {
-        self.find_all(selector).into_iter().next()
+impl<'dom> Find<'dom> for &'dom TestDom {
+    fn find_all(self, selector: &str) -> Vec<NodeRef<'dom>> {
+        self.root_node().find_all(selector)
     }
 }

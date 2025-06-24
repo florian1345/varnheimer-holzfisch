@@ -27,11 +27,13 @@ use kernal::prelude::*;
 use kernal::{AssertThat, AssertThatData};
 use slab::Slab;
 
+pub use crate::select::Find;
+
 #[derive(Clone, Copy)]
 pub struct NodeRef<'dom> {
     id: NodeId,
     nodes: &'dom Nodes,
-    vdom: &'dom VirtualDom,
+    virtual_dom: &'dom VirtualDom,
 }
 
 impl Debug for NodeRef<'_> {
@@ -221,7 +223,9 @@ impl<'dom> NodeRef<'dom> {
             .nodes
             .get_element_id(self.id)
             .expect("cannot handle event for node without element ID");
-        self.vdom.runtime().handle_event("click", event, element_id);
+        self.virtual_dom
+            .runtime()
+            .handle_event("click", event, element_id);
     }
 }
 
@@ -376,7 +380,7 @@ impl IndexMut<ElementId> for Nodes {
     }
 }
 
-struct ElementWriter {
+struct TestDomWriter {
     nodes: Nodes,
     stack: Vec<NodeId>,
     root_node_id: NodeId,
@@ -428,8 +432,8 @@ fn render_template_node(template_node: &TemplateNode, nodes: &mut Nodes) -> Node
     }
 }
 
-impl ElementWriter {
-    fn new() -> ElementWriter {
+impl TestDomWriter {
+    fn new() -> TestDomWriter {
         let mut nodes = Nodes::new();
 
         let root_node_id = nodes.insert(Node::new(NodeKind::Element {
@@ -440,7 +444,7 @@ impl ElementWriter {
         }));
         nodes.assign(root_node_id, ElementId(0));
 
-        ElementWriter {
+        TestDomWriter {
             nodes,
             stack: Vec::new(),
             root_node_id,
@@ -503,7 +507,7 @@ impl ElementWriter {
     }
 }
 
-impl WriteMutations for ElementWriter {
+impl WriteMutations for TestDomWriter {
     fn append_children(&mut self, id: ElementId, m: usize) {
         let id = self
             .nodes
@@ -635,56 +639,38 @@ impl WriteMutations for ElementWriter {
     }
 }
 
-pub struct VirtualDomWrapper {
+pub struct TestDom {
     virtual_dom: VirtualDom,
-    element_writer: ElementWriter,
+    writer: TestDomWriter,
 }
 
-impl VirtualDomWrapper {
+impl TestDom {
     pub fn new_with_props<P: Clone + 'static, M: 'static>(
         root: impl ComponentFunction<P, M>,
         root_props: P,
-    ) -> VirtualDomWrapper {
+    ) -> TestDom {
         dioxus_html::events::set_event_converter(Box::new(SerializedHtmlEventConverter));
 
         let mut virtual_dom = VirtualDom::new_with_props(root, root_props);
-        let mut element_writer = ElementWriter::new();
-        virtual_dom.rebuild(&mut element_writer);
+        let mut writer = TestDomWriter::new();
+        virtual_dom.rebuild(&mut writer);
 
-        VirtualDomWrapper {
+        TestDom {
             virtual_dom,
-            element_writer,
+            writer,
         }
     }
 
     pub fn update(&mut self) {
-        self.virtual_dom.render_immediate(&mut self.element_writer);
-    }
-
-    pub fn root_nodes(&self) -> Vec<NodeRef<'_>> {
-        self.element_writer.nodes[self.element_writer.root_node_id]
-            .children()
-            .iter()
-            .copied()
-            .map(|id| NodeRef {
-                id,
-                nodes: &self.element_writer.nodes,
-                vdom: &self.virtual_dom,
-            })
-            .collect()
+        self.virtual_dom.render_immediate(&mut self.writer);
     }
 
     pub fn root_node(&self) -> NodeRef<'_> {
-        let root_nodes = self.root_nodes();
-
-        assert_eq!(
-            root_nodes.len(),
-            1,
-            "expected singular root node, but found {}",
-            root_nodes.len()
-        );
-
-        root_nodes[0]
+        NodeRef {
+            id: self.writer.root_node_id,
+            nodes: &self.writer.nodes,
+            virtual_dom: &self.virtual_dom,
+        }
     }
 }
 
