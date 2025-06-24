@@ -1,32 +1,27 @@
+pub mod event;
 mod select;
 
-use std::any::Any;
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Debug, Formatter, Write};
 use std::ops::{Index, IndexMut};
-use std::rc::Rc;
 
 use dioxus_core::{
     AttributeValue,
     ComponentFunction,
     ElementId,
-    Event,
     Template,
     TemplateAttribute,
     TemplateNode,
     VirtualDom,
     WriteMutations,
 };
-use dioxus_html::geometry::{ClientPoint, Coordinates, ElementPoint, PagePoint, ScreenPoint};
-use dioxus_html::input_data::{MouseButton, MouseButtonSet};
-use dioxus_html::prelude::Modifiers;
-use dioxus_html::{PlatformEventData, SerializedHtmlEventConverter, SerializedMouseData};
 use kernal::prelude::*;
 use kernal::{AssertThat, AssertThatData};
 use slab::Slab;
 
+use crate::event::TestHtmlEventConverter;
 pub use crate::select::Find;
 
 #[derive(Clone, Copy)]
@@ -203,29 +198,6 @@ impl<'dom> NodeRef<'dom> {
 
     pub fn parent(self) -> Option<NodeRef<'dom>> {
         self.node().parent.map(|id| NodeRef { id, ..self })
-    }
-
-    pub fn click(self) {
-        let mouse_data = SerializedMouseData::new(
-            Some(MouseButton::Primary),
-            MouseButtonSet::default(),
-            Coordinates::new(
-                ScreenPoint::default(),
-                ClientPoint::default(),
-                ElementPoint::default(),
-                PagePoint::default(),
-            ),
-            Modifiers::default(),
-        );
-        let platform_event_data = PlatformEventData::new(Box::new(mouse_data));
-        let event = Event::new(Rc::new(platform_event_data) as Rc<dyn Any>, true);
-        let element_id = self
-            .nodes
-            .get_element_id(self.id)
-            .expect("cannot handle event for node without element ID");
-        self.virtual_dom
-            .runtime()
-            .handle_event("click", event, element_id);
     }
 }
 
@@ -649,7 +621,7 @@ impl TestDom {
         root: impl ComponentFunction<P, M>,
         root_props: P,
     ) -> TestDom {
-        dioxus_html::events::set_event_converter(Box::new(SerializedHtmlEventConverter));
+        dioxus_html::events::set_event_converter(Box::new(TestHtmlEventConverter));
 
         let mut virtual_dom = VirtualDom::new_with_props(root, root_props);
         let mut writer = TestDomWriter::new();

@@ -213,6 +213,7 @@ pub fn AptitudeInput(aptitude: Signal<Option<Aptitude>>) -> Element {
 
 #[cfg(test)]
 mod tests {
+    use dioxus_test_utils::event::MouseEventType;
     use dioxus_test_utils::{Find, NodeRefAssertions, TestDom};
     use kernal::prelude::*;
 
@@ -264,7 +265,7 @@ mod tests {
 
         assert_that!(dom.find("input")).has_attribute("value", "0");
 
-        dom.find_all("button")[0].click();
+        dom.find_all("button")[0].trigger(MouseEventType::Click);
         dom.update();
 
         assert_that!(dom.find("input")).has_attribute("value", "1");
