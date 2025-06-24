@@ -1,231 +1,606 @@
 mod select;
 
 use std::borrow::Borrow;
+use std::collections::HashMap;
 use std::fmt;
-use std::fmt::{Debug, Formatter};
-use std::rc::Rc;
+use std::fmt::{Debug, Write};
+use std::ops::{Index, IndexMut};
 
 use dioxus_core::{
-    Attribute,
     AttributeValue,
     ComponentFunction,
-    DynamicNode,
-    NoOpMutations,
-    ScopeId,
+    ElementId,
+    Template,
     TemplateAttribute,
     TemplateNode,
-    VNode,
     VirtualDom,
+    WriteMutations,
 };
-use futures::FutureExt;
 use kernal::prelude::*;
 use kernal::{AssertThat, AssertThatData};
+use slab::Slab;
 
-pub struct AttributeWrapper {
-    name: &'static str,
-    value: String,
+#[derive(Clone, Copy, Debug)]
+pub struct NodeRef<'dom> {
+    id: NodeId,
+    nodes: &'dom Nodes,
 }
 
-impl From<Attribute> for AttributeWrapper {
-    fn from(attribute: Attribute) -> AttributeWrapper {
-        let value = match attribute.value {
-            AttributeValue::Text(s) => s,
-            AttributeValue::Float(f) => f.to_string(),
-            AttributeValue::Int(i) => i.to_string(),
-            AttributeValue::Bool(b) => b.to_string(),
-            _ => panic!(
-                "attribute value {:?} cannot be represented as a string",
-                attribute.value
-            ),
-        };
+fn expect_text(value: &AttributeValue) -> &str {
+    let AttributeValue::Text(value) = value
+    else {
+        panic!("expected text attribute, but found {:?}", value)
+    };
 
-        AttributeWrapper {
-            name: attribute.name,
-            value,
-        }
-    }
+    value.as_str()
 }
 
-#[derive(Clone)]
-pub struct ElementWrapper<'dom> {
-    template_node: &'dom TemplateNode,
-    parent: Option<Rc<ElementWrapper<'dom>>>,
-    index_in_parent: usize,
-    tag: &'static str,
-    attrs: &'static [TemplateAttribute],
-    children: &'static [TemplateNode],
-    vnode: &'dom VNode,
-    virtual_dom: &'dom VirtualDom,
-}
-
-impl<'dom> ElementWrapper<'dom> {
-    pub fn tag(&self) -> &'static str {
-        self.tag
-    }
-
-    pub fn attributes(&self) -> Vec<AttributeWrapper> {
-        let mut attributes = Vec::new();
-
-        for attribute in self.attrs {
-            match *attribute {
-                TemplateAttribute::Static { name, value, .. } => {
-                    attributes.push(AttributeWrapper {
-                        name,
-                        value: value.to_owned(),
-                    })
-                },
-                TemplateAttribute::Dynamic { id } => attributes.extend(
-                    self.vnode.dynamic_attrs[id]
-                        .iter()
-                        .cloned()
-                        .map(AttributeWrapper::from),
-                ),
-            }
-        }
-
-        attributes
-    }
-
-    pub fn classes(&self) -> Vec<String> {
-        self.attributes()
-            .iter()
-            .filter(|attr| attr.name == "class")
-            .flat_map(|attr| attr.value.split_whitespace().map(ToOwned::to_owned))
-            .collect()
-    }
-
-    pub fn id(&self) -> Option<String> {
-        self.attributes()
-            .into_iter()
-            .find(|attr| attr.name == "id")
-            .map(|attr| attr.value)
-    }
-
-    pub fn children(&self) -> Vec<NodeWrapper<'dom>> {
-        let mut output = Vec::new();
-
-        for child_template_node in self.children {
-            template_node_children_rec(
-                child_template_node,
-                self.vnode,
-                self.virtual_dom,
-                Some(self),
-                &mut output,
-            );
-        }
-
-        output
-    }
-
-    pub fn text_children(&self) -> Vec<&'dom str> {
-        self.children()
-            .into_iter()
-            .filter_map(NodeWrapper::as_text)
-            .collect()
+fn write_attribute_value(html: &mut String, value: &AttributeValue) -> fmt::Result {
+    match value {
+        AttributeValue::Text(text) => write!(html, "\"{}\"", text.escape_debug()),
+        AttributeValue::Float(f) => write!(html, "\"{}\"", f),
+        AttributeValue::Int(i) => write!(html, "\"{}\"", i),
+        AttributeValue::Bool(b) => write!(html, "\"{}\"", b),
+        AttributeValue::Listener(_) => write!(html, "[listener]"),
+        AttributeValue::Any(_) => write!(html, "[any]"),
+        AttributeValue::None => panic!("found none attribute value while generating HTML"),
     }
 }
 
-impl<'dom> Debug for ElementWrapper<'dom> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "ElementWrapper {{ tag: {:?}, attrs: {:?}, children: {:?}, vnode: {:?} }}",
-            self.tag, self.attrs, self.children, self.vnode
-        )
-    }
-}
-
-#[derive(Clone, Debug)]
-pub enum NodeWrapper<'dom> {
-    Element(ElementWrapper<'dom>),
-    Text(&'dom str),
-}
-
-impl<'dom> NodeWrapper<'dom> {
-    pub fn as_element(self) -> Option<ElementWrapper<'dom>> {
-        match self {
-            NodeWrapper::Element(element) => Some(element),
-            NodeWrapper::Text(_) => None,
-        }
+impl<'dom> NodeRef<'dom> {
+    fn node(self) -> &'dom Node {
+        &self.nodes[self.id]
     }
 
-    pub fn expect_element(self) -> ElementWrapper<'dom> {
-        self.as_element()
-            .expect("expected element node but found text")
+    fn kind(self) -> &'dom NodeKind {
+        &self.node().kind
     }
 
-    pub fn as_text(self) -> Option<&'dom str> {
-        match self {
-            NodeWrapper::Text(text) => Some(text),
-            NodeWrapper::Element(_) => None,
-        }
-    }
+    fn write_html(self, html: &mut String, indent: &mut String) -> fmt::Result {
+        const INDENT_PER_LEVEL: &str = "  ";
 
-    pub fn expect_text(self) -> &'dom str {
-        self.as_text()
-            .expect("expected text node but found element")
-    }
-}
-
-fn template_node_children_rec<'dom>(
-    template_node: &'dom TemplateNode,
-    vnode: &'dom VNode,
-    virtual_dom: &'dom VirtualDom,
-    parent: Option<&ElementWrapper<'dom>>,
-    output: &mut Vec<NodeWrapper<'dom>>,
-) {
-    match *template_node {
-        TemplateNode::Element {
-            tag,
-            attrs,
-            children,
-            ..
-        } => {
-            let index = output.len();
-
-            output.push(NodeWrapper::Element(ElementWrapper {
-                template_node,
-                parent: parent.map(|parent| Rc::new(parent.clone())),
-                index_in_parent: index,
+        match self.kind() {
+            NodeKind::Element {
                 tag,
                 attrs,
                 children,
-                vnode,
-                virtual_dom,
-            }))
-        },
-        TemplateNode::Text { text } => output.push(NodeWrapper::Text(text)),
-        TemplateNode::Dynamic { id } => match &vnode.dynamic_nodes[id] {
-            DynamicNode::Text(text) => output.push(NodeWrapper::Text(&text.value)),
-            DynamicNode::Fragment(vnodes) => {
-                vnodes
-                    .iter()
-                    .for_each(|vnode| children_rec(vnode, virtual_dom, parent, output));
+                ..
+            } => {
+                write!(html, "{indent}<{tag}")?;
+
+                for (key, value) in attrs {
+                    write!(html, " {}=", key.name)?;
+                    write_attribute_value(html, value)?;
+                }
+
+                if children.is_empty() {
+                    write!(html, "/>")
+                }
+                else {
+                    writeln!(html, ">")?;
+
+                    indent.push_str(INDENT_PER_LEVEL);
+
+                    for &id in children {
+                        let child = NodeRef {
+                            id,
+                            nodes: self.nodes,
+                        };
+                        child.write_html(html, indent)?;
+                        writeln!(html)?;
+                    }
+
+                    indent.truncate(indent.len() - INDENT_PER_LEVEL.len());
+
+                    write!(html, "{indent}</{tag}>")
+                }
             },
-            DynamicNode::Component(component) => {
-                let scope = component
-                    .mounted_scope(id, vnode, virtual_dom)
-                    .expect("component not mounted");
-                children_rec(scope.root_node(), virtual_dom, parent, output);
-            },
-            _ => {},
-        },
+            NodeKind::Text(text) => write!(
+                html,
+                "{indent}{text}",
+                text = html_escape::encode_text(text)
+            ),
+            NodeKind::Placeholder => write!(html, "{indent}<!-- placeholder -->"),
+        }
+    }
+
+    pub fn html(self) -> String {
+        let mut html = String::new();
+        self.write_html(&mut html, &mut String::new()).unwrap();
+        html
+    }
+
+    pub fn is_element(self) -> bool {
+        matches!(self.kind(), NodeKind::Element { .. })
+    }
+
+    pub fn as_text(self) -> Option<&'dom str> {
+        if let NodeKind::Text(text) = self.kind() {
+            Some(text.as_str())
+        }
+        else {
+            None
+        }
+    }
+
+    pub fn tag(self) -> Option<&'static str> {
+        if let NodeKind::Element { tag, .. } = self.kind() {
+            Some(*tag)
+        }
+        else {
+            None
+        }
+    }
+
+    pub fn namespace(self) -> Option<&'static str> {
+        if let &NodeKind::Element { namespace, .. } = self.kind() {
+            namespace
+        }
+        else {
+            None
+        }
+    }
+
+    pub fn attributes(self) -> Vec<(AttributeKey, &'dom AttributeValue)> {
+        if let NodeKind::Element { attrs, .. } = self.kind() {
+            attrs.iter().map(|(k, v)| (*k, v)).collect()
+        }
+        else {
+            Vec::new()
+        }
+    }
+
+    pub fn classes(self) -> Vec<String> {
+        self.attributes()
+            .iter()
+            .filter(|(key, _)| key.name == "class")
+            .flat_map(|(_, value)| expect_text(value).split_whitespace().map(ToOwned::to_owned))
+            .collect()
+    }
+
+    pub fn id(self) -> Option<&'dom str> {
+        self.attributes()
+            .into_iter()
+            .find(|(key, _)| key.name == "id")
+            .map(|(_, value)| expect_text(value))
+    }
+
+    pub fn children(self) -> Vec<NodeRef<'dom>> {
+        if let NodeKind::Element { children, .. } = self.kind() {
+            children
+                .iter()
+                .copied()
+                .map(|child_id| NodeRef {
+                    id: child_id,
+                    nodes: self.nodes,
+                })
+                .collect()
+        }
+        else {
+            Vec::new()
+        }
+    }
+
+    pub fn text_children(self) -> Vec<&'dom str> {
+        self.children()
+            .into_iter()
+            .filter_map(NodeRef::as_text)
+            .collect()
+    }
+
+    pub fn parent(self) -> Option<NodeRef<'dom>> {
+        self.node().parent.map(|id| NodeRef { id, ..self })
     }
 }
 
-fn children_rec<'dom>(
-    vnode: &'dom VNode,
-    virtual_dom: &'dom VirtualDom,
-    parent: Option<&ElementWrapper<'dom>>,
-    output: &mut Vec<NodeWrapper<'dom>>,
-) {
-    for template_node in vnode.template.roots {
-        template_node_children_rec(template_node, vnode, virtual_dom, parent, output);
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct NodeId(usize);
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct AttributeKey {
+    pub name: &'static str,
+    pub namespace: Option<&'static str>,
+}
+
+#[derive(Clone, Debug)]
+enum NodeKind {
+    Element {
+        tag: &'static str,
+        namespace: Option<&'static str>,
+        attrs: HashMap<AttributeKey, AttributeValue>,
+        children: Vec<NodeId>,
+    },
+    Text(String),
+    Placeholder,
+}
+
+#[derive(Clone, Debug)]
+struct Node {
+    kind: NodeKind,
+    parent: Option<NodeId>,
+}
+
+impl Node {
+    fn new(kind: NodeKind) -> Node {
+        Node { kind, parent: None }
+    }
+
+    fn children(&self) -> &[NodeId] {
+        match &self.kind {
+            NodeKind::Element { children, .. } => children,
+            _ => &[],
+        }
+    }
+
+    fn children_mut(&mut self) -> &mut Vec<NodeId> {
+        match &mut self.kind {
+            NodeKind::Element { children, .. } => children,
+            NodeKind::Text(_) => panic!("children of text node cannot be modified"),
+            NodeKind::Placeholder => panic!("children of placeholder node cannot be modified"),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct Nodes {
+    nodes: Slab<Node>,
+    node_to_element_ids: HashMap<NodeId, ElementId>,
+    element_to_node_ids: HashMap<ElementId, NodeId>,
+}
+
+impl Nodes {
+    fn new() -> Nodes {
+        Nodes {
+            nodes: Slab::new(),
+            node_to_element_ids: HashMap::new(),
+            element_to_node_ids: HashMap::new(),
+        }
+    }
+
+    fn get(&self, id: NodeId) -> Option<&Node> {
+        self.nodes.get(id.0)
+    }
+
+    fn get_mut(&mut self, id: NodeId) -> Option<&mut Node> {
+        self.nodes.get_mut(id.0)
+    }
+
+    fn get_element_id(&self, id: ElementId) -> Option<NodeId> {
+        self.element_to_node_ids.get(&id).copied()
+    }
+
+    fn get_element(&self, id: ElementId) -> Option<&Node> {
+        self.get_element_id(id).and_then(|id| self.get(id))
+    }
+
+    fn get_element_mut(&mut self, id: ElementId) -> Option<&mut Node> {
+        self.get_element_id(id).and_then(|id| self.get_mut(id))
+    }
+
+    fn insert(&mut self, node: Node) -> NodeId {
+        let id = NodeId(self.nodes.insert(node));
+
+        for child in self.nodes[id.0].children().to_owned() {
+            self.nodes[child.0].parent = Some(id);
+        }
+
+        id
+    }
+
+    fn assign(&mut self, node_id: NodeId, element_id: ElementId) {
+        let replaced_element = self.node_to_element_ids.insert(node_id, element_id);
+        let replaced_node = self.element_to_node_ids.insert(element_id, node_id);
+
+        assert!(replaced_element.is_none());
+        assert!(replaced_node.is_none());
+    }
+
+    fn remove(&mut self, id: NodeId) {
+        if let Some(parent) = self[id].parent {
+            self[parent]
+                .children_mut()
+                .retain(|&child_id| child_id != id);
+        }
+
+        self.nodes.remove(id.0);
+
+        if let Some(element_id) = self.node_to_element_ids.remove(&id) {
+            self.element_to_node_ids.remove(&element_id);
+        }
+    }
+}
+
+impl Index<NodeId> for Nodes {
+    type Output = Node;
+
+    fn index(&self, id: NodeId) -> &Node {
+        self.get(id).expect("node does not exist")
+    }
+}
+
+impl IndexMut<NodeId> for Nodes {
+    fn index_mut(&mut self, id: NodeId) -> &mut Node {
+        self.get_mut(id).expect("node does not exist")
+    }
+}
+
+impl Index<ElementId> for Nodes {
+    type Output = Node;
+
+    fn index(&self, id: ElementId) -> &Node {
+        self.get_element(id)
+            .expect("element ID does not have assigned node ID")
+    }
+}
+
+impl IndexMut<ElementId> for Nodes {
+    fn index_mut(&mut self, id: ElementId) -> &mut Node {
+        self.get_element_mut(id)
+            .expect("element ID does not have assigned node ID")
+    }
+}
+
+struct ElementWriter {
+    nodes: Nodes,
+    stack: Vec<NodeId>,
+    root_node_id: NodeId,
+}
+
+fn render_template_node(template_node: &TemplateNode, nodes: &mut Nodes) -> Node {
+    use TemplateNode::*;
+    match template_node {
+        &Element {
+            tag,
+            namespace,
+            attrs,
+            children,
+        } => {
+            let attrs = attrs
+                .iter()
+                .filter_map(|attr| {
+                    if let &TemplateAttribute::Static {
+                        name,
+                        namespace,
+                        value,
+                    } = attr
+                    {
+                        let key = AttributeKey { name, namespace };
+                        Some((key, AttributeValue::Text(value.to_owned())))
+                    }
+                    else {
+                        None
+                    }
+                })
+                .collect();
+            let children = children
+                .iter()
+                .map(|template_node| {
+                    let node = render_template_node(template_node, nodes);
+                    nodes.insert(node)
+                })
+                .collect();
+
+            Node::new(NodeKind::Element {
+                tag,
+                namespace,
+                attrs,
+                children,
+            })
+        },
+        Text { text } => Node::new(NodeKind::Text((*text).to_owned())),
+        Dynamic { .. } => Node::new(NodeKind::Placeholder),
+    }
+}
+
+impl ElementWriter {
+    fn new() -> ElementWriter {
+        let mut nodes = Nodes::new();
+
+        let root_node_id = nodes.insert(Node::new(NodeKind::Element {
+            tag: "dioxus-test-utils-root",
+            namespace: None,
+            attrs: HashMap::new(),
+            children: vec![],
+        }));
+        nodes.assign(root_node_id, ElementId(0));
+
+        ElementWriter {
+            nodes,
+            stack: Vec::new(),
+            root_node_id,
+        }
+    }
+
+    fn load_path(&self, path: &[u8]) -> NodeId {
+        let mut node = self.stack[self.stack.len() - 1];
+
+        for &segment in path {
+            node = self.nodes.get(node).unwrap().children()[segment as usize];
+        }
+
+        node
+    }
+
+    fn insert_children_in_parent(
+        &mut self,
+        reference_node: NodeId,
+        children: Vec<NodeId>,
+        offset: usize,
+    ) {
+        let parent_id = self
+            .nodes
+            .get(reference_node)
+            .unwrap()
+            .parent
+            .expect("replacing element without parent");
+        self.set_parent(parent_id, &children);
+        let parent = self.nodes.get_mut(parent_id).unwrap();
+        let child_idx = parent
+            .children()
+            .iter()
+            .enumerate()
+            .find(|(_, child)| **child == reference_node)
+            .map(|(idx, _)| idx)
+            .unwrap();
+        let idx = child_idx + offset;
+
+        parent.children_mut().splice(idx..idx, children);
+    }
+
+    fn set_parent(&mut self, parent_node: NodeId, child_nodes: &[NodeId]) {
+        for &id in child_nodes {
+            self.nodes[id].parent = Some(parent_node);
+        }
+    }
+
+    fn replace(&mut self, replaced_node: NodeId, replacement_nodes: Vec<NodeId>) {
+        if let Some(parent) = self.nodes[replaced_node].parent {
+            self.set_parent(parent, &replacement_nodes);
+        }
+
+        self.insert_children_in_parent(replaced_node, replacement_nodes, 0);
+        self.nodes.remove(replaced_node);
+    }
+
+    fn pop_many(&mut self, count: usize) -> Vec<NodeId> {
+        self.stack.split_off(self.stack.len() - count)
+    }
+}
+
+impl WriteMutations for ElementWriter {
+    fn append_children(&mut self, id: ElementId, m: usize) {
+        let id = self
+            .nodes
+            .get_element_id(id)
+            .expect("appending children to non-existing node");
+        let mut to_append = self.pop_many(m);
+
+        self.set_parent(id, &to_append);
+        self.nodes[id].children_mut().append(&mut to_append);
+    }
+
+    fn assign_node_id(&mut self, path: &'static [u8], id: ElementId) {
+        self.nodes.assign(self.load_path(path), id);
+    }
+
+    fn create_placeholder(&mut self, id: ElementId) {
+        let node_id = self.nodes.insert(Node::new(NodeKind::Placeholder));
+        self.nodes.assign(node_id, id);
+        self.stack.push(node_id);
+    }
+
+    fn create_text_node(&mut self, value: &str, id: ElementId) {
+        let node_id = self
+            .nodes
+            .insert(Node::new(NodeKind::Text(value.to_owned())));
+        self.nodes.assign(node_id, id);
+        self.stack.push(node_id);
+    }
+
+    fn load_template(&mut self, template: Template, index: usize, id: ElementId) {
+        // TODO dioxus-web does some caching here, maybe we can as well?
+
+        let template_root = render_template_node(&template.roots[index], &mut self.nodes);
+        let node_id = self.nodes.insert(template_root);
+        self.nodes.assign(node_id, id);
+        self.stack.push(node_id);
+    }
+
+    fn replace_node_with(&mut self, id: ElementId, m: usize) {
+        let replaced_node = self
+            .nodes
+            .get_element_id(id)
+            .expect("replacing non-existing element");
+        let replacement_nodes = self.pop_many(m);
+        self.replace(replaced_node, replacement_nodes);
+    }
+
+    fn replace_placeholder_with_nodes(&mut self, path: &'static [u8], m: usize) {
+        let replacement_nodes = self.pop_many(m);
+        let replaced_node = self.load_path(path);
+        self.replace(replaced_node, replacement_nodes);
+    }
+
+    fn insert_nodes_after(&mut self, id: ElementId, m: usize) {
+        let anchor_node = self
+            .nodes
+            .get_element_id(id)
+            .expect("inserting after non-existing element");
+        let inserted_nodes = self.pop_many(m);
+
+        self.insert_children_in_parent(anchor_node, inserted_nodes, 1);
+    }
+
+    fn insert_nodes_before(&mut self, id: ElementId, m: usize) {
+        let anchor_node = self
+            .nodes
+            .get_element_id(id)
+            .expect("inserting before non-existing element");
+        let inserted_nodes = self.pop_many(m);
+
+        self.insert_children_in_parent(anchor_node, inserted_nodes, 0);
+    }
+
+    fn set_attribute(
+        &mut self,
+        name: &'static str,
+        ns: Option<&'static str>,
+        value: &AttributeValue,
+        id: ElementId,
+    ) {
+        match &mut self.nodes[id].kind {
+            NodeKind::Element { attrs, .. } => {
+                let key = AttributeKey {
+                    name,
+                    namespace: ns,
+                };
+
+                if let AttributeValue::None = value {
+                    attrs.remove(&key);
+                }
+                else {
+                    attrs.insert(key, value.clone());
+                }
+            },
+            _ => panic!("cannot set attribute of non-element node"),
+        }
+    }
+
+    fn set_node_text(&mut self, value: &str, id: ElementId) {
+        for child_id in self.nodes[id].children().to_owned() {
+            self.nodes.remove(child_id);
+        }
+
+        let new_text_node_id = self
+            .nodes
+            .insert(Node::new(NodeKind::Text(value.to_owned())));
+
+        self.nodes[id].children_mut().push(new_text_node_id);
+    }
+
+    fn create_event_listener(&mut self, _: &'static str, _: ElementId) {}
+
+    fn remove_event_listener(&mut self, _: &'static str, _: ElementId) {}
+
+    fn remove_node(&mut self, id: ElementId) {
+        let removed_node = self
+            .nodes
+            .get_element_id(id)
+            .expect("removing non-existing element");
+        self.nodes.remove(removed_node);
+    }
+
+    fn push_root(&mut self, id: ElementId) {
+        let node_id = self
+            .nodes
+            .get_element_id(id)
+            .expect("pushing non-existing element");
+        self.stack.push(node_id);
     }
 }
 
 pub struct VirtualDomWrapper {
-    virtual_dom: VirtualDom,
+    element_writer: ElementWriter,
 }
 
 impl VirtualDomWrapper {
@@ -234,29 +609,29 @@ impl VirtualDomWrapper {
         root_props: P,
     ) -> VirtualDomWrapper {
         let mut virtual_dom = VirtualDom::new_with_props(root, root_props);
-        virtual_dom.rebuild_in_place();
+        let mut element_writer = ElementWriter::new();
+        virtual_dom.rebuild(&mut element_writer);
 
-        while virtual_dom.wait_for_work().now_or_never().is_some() {
-            virtual_dom.render_immediate(&mut NoOpMutations);
-        }
-
-        VirtualDomWrapper { virtual_dom }
+        VirtualDomWrapper { element_writer }
     }
 
-    pub fn root_nodes(&self) -> Vec<NodeWrapper<'_>> {
-        let root_vnode = self
-            .virtual_dom
-            .get_scope(ScopeId::APP)
-            .unwrap()
-            .root_node();
-
-        let mut root_nodes = Vec::new();
-        children_rec(root_vnode, &self.virtual_dom, None, &mut root_nodes);
-        root_nodes
+    pub fn root_nodes(&self) -> Vec<NodeRef<'_>> {
+        self.element_writer.nodes[self.element_writer.root_node_id]
+            .children()
+            .iter()
+            .copied()
+            .map(|id| NodeRef {
+                id,
+                nodes: &self.element_writer.nodes,
+            })
+            .collect()
     }
 }
 
-pub trait ElementWrapperAssertions {
+pub trait NodeRefAssertions {
+    #[allow(clippy::wrong_self_convention)] // for assertion chaining
+    fn is_text(self, expected_text: impl AsRef<str>) -> Self;
+
     fn has_tag(self, tag: impl AsRef<str>) -> Self;
 
     fn has_exactly_classes(self, classes: impl IntoIterator<Item = impl AsRef<str>>) -> Self;
@@ -264,9 +639,19 @@ pub trait ElementWrapperAssertions {
     fn contains_only_text(self, expected_text: impl AsRef<str>) -> Self;
 }
 
-impl<'dom, E: Borrow<ElementWrapper<'dom>>> ElementWrapperAssertions for AssertThat<E> {
+impl<'dom, N: Borrow<NodeRef<'dom>>> NodeRefAssertions for AssertThat<N> {
+    fn is_text(self, expected_text: impl AsRef<str>) -> Self {
+        let actual_text = self
+            .data()
+            .borrow()
+            .as_text()
+            .expect("asserted node is not a text node");
+        assert_that!(actual_text).is_equal_to(expected_text.as_ref());
+        self
+    }
+
     fn has_tag(self, tag: impl AsRef<str>) -> Self {
-        assert_that!(self.data().borrow().tag()).is_equal_to(tag.as_ref());
+        assert_that!(self.data().borrow().tag()).contains(tag.as_ref());
         self
     }
 
@@ -283,19 +668,6 @@ impl<'dom, E: Borrow<ElementWrapper<'dom>>> ElementWrapperAssertions for AssertT
         assert_that!(&children).has_length(1);
         assert_that!(&children[0]).is_text(expected_text);
 
-        self
-    }
-}
-
-pub trait NodeWrapperAssertions {
-    #[allow(clippy::wrong_self_convention)] // for assertion chaining
-    fn is_text(self, expected_text: impl AsRef<str>) -> Self;
-}
-
-impl<'dom, N: Borrow<NodeWrapper<'dom>>> NodeWrapperAssertions for AssertThat<N> {
-    fn is_text(self, expected_text: impl AsRef<str>) -> Self {
-        let actual_text = self.data().borrow().clone().expect_text();
-        assert_that!(actual_text).is_equal_to(expected_text.as_ref());
         self
     }
 }

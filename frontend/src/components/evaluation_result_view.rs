@@ -137,7 +137,7 @@ pub fn EvaluationResultView(evaluation_result: EvaluationResult) -> Element {
 
 #[cfg(test)]
 mod tests {
-    use dioxus_test_utils::{ElementWrapperAssertions, NodeWrapperAssertions, VirtualDomWrapper};
+    use dioxus_test_utils::{NodeRefAssertions, VirtualDomWrapper};
     use kernal::prelude::*;
     use model::check::modifier::{Aptitude, Modifier, ModifierAction, Reroll};
     use model::check::outcome::{
@@ -167,7 +167,7 @@ mod tests {
             span: (28..79).into(),
         }));
 
-        let root_node = vdom.root_nodes()[0].clone().expect_element();
+        let root_node = vdom.root_nodes()[0];
         let error_div = root_node.find("div.center-box > div.error");
 
         assert_that!(&error_div.children()[0])
@@ -185,7 +185,7 @@ mod tests {
             },
         }));
 
-        let root_node = vdom.root_nodes()[0].clone().expect_element();
+        let root_node = vdom.root_nodes()[0];
         let info_div = root_node.find("div.center-box > div.info");
 
         // We are content with only checking the existence of an EvaluatedProbabilitiesView.
@@ -278,7 +278,7 @@ mod tests {
             },
         }));
 
-        let root_node = vdom.root_nodes()[0].clone().expect_element();
+        let root_node = vdom.root_nodes()[0].clone();
 
         assert_that!(root_node.children()).has_length(2);
 

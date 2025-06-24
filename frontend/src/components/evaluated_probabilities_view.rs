@@ -78,7 +78,7 @@ pub fn EvaluatedProbabilitiesView(
 
 #[cfg(test)]
 mod tests {
-    use dioxus_test_utils::{ElementWrapperAssertions, VirtualDomWrapper};
+    use dioxus_test_utils::{NodeRefAssertions, VirtualDomWrapper};
     use kernal::prelude::*;
     use model::check::modifier::Modifier;
     use model::check::outcome::SkillCheckOutcome;
@@ -121,7 +121,7 @@ mod tests {
             evaluation: Evaluation::new(0.25).unwrap(),
         });
 
-        let root_node = vdom.root_nodes()[0].clone().expect_element();
+        let root_node = vdom.root_nodes()[0].clone();
 
         assert_that!(root_node.text_children()[0]).is_equal_to("Average value: 0.25");
     }
@@ -165,9 +165,7 @@ mod tests {
             evaluation: Evaluation::new(0.25).unwrap(),
         });
 
-        let root_node = vdom.root_nodes()[0].clone().expect_element();
-
-        eprintln!("{:?}", root_node.find_first("table > tr"));
+        let root_node = vdom.root_nodes()[0].clone();
 
         let header_cells = root_node.find_all("table > tr > th");
 

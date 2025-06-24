@@ -3,6 +3,7 @@ use std::fmt::Write;
 use std::ops::Deref;
 
 use cssparser::{ParserInput, ToCss};
+use dioxus_core::AttributeValue;
 use precomputed_hash::PrecomputedHash;
 use selectors::attr::{AttrSelectorOperation, CaseSensitivity, NamespaceConstraint};
 use selectors::bloom::BloomFilter;
@@ -18,7 +19,7 @@ use selectors::parser::{NonTSPseudoClass, Selector, SelectorParseErrorKind};
 use selectors::{Element, OpaqueElement, SelectorImpl, matching, parser};
 use string_cache::{Atom, EmptyStaticAtomSet};
 
-use crate::{ElementWrapper, NodeWrapper};
+use crate::NodeRef;
 
 #[derive(Clone, Default, Eq, PartialEq)]
 pub struct CssName(Atom<EmptyStaticAtomSet>);
@@ -109,20 +110,17 @@ impl SelectorImpl for ElementWrapperSelectorImpl {
 // Another wrapper around ElementWrapper to avoid confusing methods from Element being available on
 // ElementWrapper.
 #[derive(Clone, Debug)]
-struct SelectorElementWrapper<'dom>(ElementWrapper<'dom>);
+struct SelectorElementWrapper<'dom>(NodeRef<'dom>);
 
 impl<'dom> Element for SelectorElementWrapper<'dom> {
     type Impl = ElementWrapperSelectorImpl;
 
     fn opaque(&self) -> OpaqueElement {
-        OpaqueElement::new(self.0.template_node)
+        OpaqueElement::new(&self.0.nodes[self.0.id])
     }
 
     fn parent_element(&self) -> Option<SelectorElementWrapper<'dom>> {
-        self.0
-            .parent
-            .as_ref()
-            .map(|parent| SelectorElementWrapper((**parent).clone()))
+        self.0.parent().map(SelectorElementWrapper)
     }
 
     fn parent_node_is_shadow_root(&self) -> bool {
@@ -137,33 +135,39 @@ impl<'dom> Element for SelectorElementWrapper<'dom> {
         false
     }
 
-    // TODO generating the children again for each query seems expensive?
-
     fn prev_sibling_element(&self) -> Option<SelectorElementWrapper<'dom>> {
         self.0
-            .parent
-            .as_ref()
+            .parent()
             .and_then(|parent| {
+                let index_in_parent = parent
+                    .children()
+                    .iter()
+                    .position(|child| child.id == self.0.id)?;
+
                 parent
                     .children()
                     .into_iter()
-                    .take(self.0.index_in_parent)
+                    .take(index_in_parent)
                     .rev()
-                    .find_map(|node| node.as_element())
+                    .find(|node| node.is_element())
             })
             .map(SelectorElementWrapper)
     }
 
     fn next_sibling_element(&self) -> Option<SelectorElementWrapper<'dom>> {
         self.0
-            .parent
-            .as_ref()
+            .parent()
             .and_then(|parent| {
+                let index_in_parent = parent
+                    .children()
+                    .iter()
+                    .position(|child| child.id == self.0.id)?;
+
                 parent
                     .children()
                     .into_iter()
-                    .skip(self.0.index_in_parent + 1)
-                    .find_map(|node| node.as_element())
+                    .skip(index_in_parent + 1)
+                    .find(|child| child.tag().is_some())
             })
             .map(SelectorElementWrapper)
     }
@@ -172,7 +176,7 @@ impl<'dom> Element for SelectorElementWrapper<'dom> {
         self.0
             .children()
             .into_iter()
-            .find_map(NodeWrapper::as_element)
+            .find(|node| node.is_element())
             .map(SelectorElementWrapper)
     }
 
@@ -181,28 +185,40 @@ impl<'dom> Element for SelectorElementWrapper<'dom> {
     }
 
     fn has_local_name(&self, local_name: &CssName) -> bool {
-        self.0.tag == local_name.as_ref()
+        self.0.tag() == Some(local_name.as_ref())
     }
 
-    fn has_namespace(&self, _: &CssName) -> bool {
-        false
+    fn has_namespace(&self, namespace: &CssName) -> bool {
+        self.0.namespace() == Some(namespace.as_ref())
     }
 
     fn is_same_type(&self, other: &SelectorElementWrapper<'dom>) -> bool {
-        self.0.tag == other.0.tag
+        self.0.tag() == other.0.tag()
     }
 
     fn attr_matches(
         &self,
-        _: &NamespaceConstraint<&CssName>,
+        namespace: &NamespaceConstraint<&CssName>,
         local_name: &CssName,
         operation: &AttrSelectorOperation<&CssName>,
     ) -> bool {
         self.0
             .attributes()
             .into_iter()
-            .find(|attribute| attribute.name == local_name.as_ref())
-            .is_some_and(|attribute| operation.eval_str(&attribute.value))
+            .filter(|(key, _)| match namespace {
+                NamespaceConstraint::Any => true,
+                NamespaceConstraint::Specific(namespace) => {
+                    key.namespace == Some(namespace.as_ref())
+                },
+            })
+            .find(|(key, _)| key.name == local_name.as_ref())
+            .is_some_and(|(_, value)| match value {
+                AttributeValue::Text(text) => operation.eval_str(text.as_str()),
+                AttributeValue::Float(f) => operation.eval_str(&f.to_string()),
+                AttributeValue::Int(i) => operation.eval_str(&i.to_string()),
+                AttributeValue::Bool(b) => operation.eval_str(&b.to_string()),
+                _ => false,
+            })
     }
 
     fn match_non_ts_pseudo_class(
@@ -224,7 +240,7 @@ impl<'dom> Element for SelectorElementWrapper<'dom> {
     fn apply_selector_flags(&self, _: ElementSelectorFlags) {}
 
     fn is_link(&self) -> bool {
-        self.0.tag == "link"
+        self.0.tag() == Some("link")
     }
 
     fn is_html_slot_element(&self) -> bool {
@@ -264,7 +280,7 @@ impl<'dom> Element for SelectorElementWrapper<'dom> {
     }
 
     fn is_root(&self) -> bool {
-        self.0.parent.is_none()
+        self.0.parent().is_none()
     }
 
     fn add_element_unique_hashes(&self, _: &mut BloomFilter) -> bool {
@@ -287,8 +303,8 @@ fn parse_selector(selector: &str) -> Selector<ElementWrapperSelectorImpl> {
     Selector::parse(&Parser, &mut parser).unwrap()
 }
 
-impl<'dom> ElementWrapper<'dom> {
-    pub fn find_all(&self, selector: &str) -> Vec<ElementWrapper<'dom>> {
+impl<'dom> NodeRef<'dom> {
+    pub fn find_all(self, selector: &str) -> Vec<NodeRef<'dom>> {
         let selector = parse_selector(selector);
         let mut caches = Default::default();
         let mut context = MatchingContext::new(
@@ -300,7 +316,7 @@ impl<'dom> ElementWrapper<'dom> {
             MatchingForInvalidation::No,
         );
 
-        let mut remaining = vec![self.clone()];
+        let mut remaining = vec![self];
         let mut matches = Vec::new();
 
         while let Some(element) = remaining.pop() {
@@ -309,7 +325,7 @@ impl<'dom> ElementWrapper<'dom> {
                     .children()
                     .into_iter()
                     .rev()
-                    .filter_map(NodeWrapper::as_element),
+                    .filter(|node| node.is_element()),
             );
             let element = SelectorElementWrapper(element);
 
@@ -321,7 +337,7 @@ impl<'dom> ElementWrapper<'dom> {
         matches
     }
 
-    pub fn try_find(&self, selector: &str) -> Option<ElementWrapper<'dom>> {
+    pub fn try_find(self, selector: &str) -> Option<NodeRef<'dom>> {
         let all_matches = self.find_all(selector);
 
         assert!(
@@ -334,7 +350,7 @@ impl<'dom> ElementWrapper<'dom> {
         all_matches.into_iter().next()
     }
 
-    pub fn find(&self, selector: &str) -> ElementWrapper<'dom> {
+    pub fn find(self, selector: &str) -> NodeRef<'dom> {
         let all_matches = self.find_all(selector);
 
         assert_eq!(
@@ -348,7 +364,7 @@ impl<'dom> ElementWrapper<'dom> {
         all_matches.into_iter().next().unwrap()
     }
 
-    pub fn find_first(&self, selector: &str) -> Option<ElementWrapper<'dom>> {
+    pub fn find_first(self, selector: &str) -> Option<NodeRef<'dom>> {
         self.find_all(selector).into_iter().next()
     }
 }
