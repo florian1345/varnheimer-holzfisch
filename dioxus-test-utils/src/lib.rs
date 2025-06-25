@@ -17,6 +17,7 @@ use dioxus_core::{
     VirtualDom,
     WriteMutations,
 };
+use futures::FutureExt;
 use kernal::prelude::*;
 use kernal::{AssertThat, AssertThatData};
 use slab::Slab;
@@ -634,7 +635,9 @@ impl TestDom {
     }
 
     pub fn update(&mut self) {
-        self.virtual_dom.render_immediate(&mut self.writer);
+        while self.virtual_dom.wait_for_work().now_or_never().is_some() {
+            self.virtual_dom.render_immediate(&mut self.writer);
+        }
     }
 
     pub fn root_node(&self) -> NodeRef<'_> {

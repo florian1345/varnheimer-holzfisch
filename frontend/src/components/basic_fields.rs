@@ -63,16 +63,19 @@ pub fn NumberInput<T: Int>(
     class: Option<String>,
     #[props(default = false)] zero_as_empty: bool,
 ) -> Element {
+    eprintln!("component rendered");
     let mut text_value = use_signal(|| to_string(value(), zero_as_empty));
 
     use_effect(move || {
         let mut text_value = text_value();
+        eprintln!("in use_effect with {}", &text_value);
 
         if text_value.is_empty() {
             text_value.push('0');
         }
 
         if let Ok(parsed_value) = text_value.parse::<T>() {
+            eprintln!("value being set to {}", &parsed_value);
             value.set(clamp(parsed_value, min, max));
         }
     });
@@ -94,6 +97,7 @@ pub fn NumberInput<T: Int>(
                 },
 
                 oninput: move |event| {
+                    eprintln!("text value being set to {}", event.value());
                     text_value.set(event.value());
                 },
 
@@ -213,7 +217,7 @@ pub fn AptitudeInput(aptitude: Signal<Option<Aptitude>>) -> Element {
 
 #[cfg(test)]
 mod tests {
-    use dioxus_test_utils::event::MouseEventType;
+    use dioxus_test_utils::event::{FocusEventType, FormEventType, MouseEventType, TestFormData};
     use dioxus_test_utils::{Find, NodeRefAssertions, TestDom};
     use kernal::prelude::*;
 
@@ -269,5 +273,23 @@ mod tests {
         dom.update();
 
         assert_that!(dom.find("input")).has_attribute("value", "1");
+    }
+
+    #[test]
+    fn number_input_text_input() {
+        let mut dom = mount_number_input(0usize, None, None, None, false);
+
+        dom.find("input").trigger_with(
+            FormEventType::Input,
+            TestFormData {
+                value: "123".to_owned(),
+                ..Default::default()
+            },
+        );
+        dom.update();
+        dom.find("input").trigger(FocusEventType::Blur);
+        dom.update();
+
+        assert_that!(dom.find("input")).has_attribute("value", "123");
     }
 }
