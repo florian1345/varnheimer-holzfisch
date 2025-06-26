@@ -231,6 +231,7 @@ mod tests {
         MouseEventType,
         TestFormData,
     };
+    use dioxus_test_utils::signal::TestSignal;
     use dioxus_test_utils::{Find, NodeRefAssertions, TestDom};
     use kernal::prelude::*;
     use rstest::rstest;
@@ -238,7 +239,7 @@ mod tests {
     use super::*;
 
     fn mount_number_input<T: Int>(
-        value: T,
+        value: TestSignal<T>,
         min: Option<T>,
         max: Option<T>,
         class: Option<String>,
@@ -246,17 +247,15 @@ mod tests {
     ) -> TestDom {
         #[component]
         fn Wrapper<T: Int>(
-            value: T,
+            value: TestSignal<T>,
             min: Option<T>,
             max: Option<T>,
             class: Option<String>,
             zero_as_empty: bool,
         ) -> Element {
-            let value = use_signal(|| value);
-
             rsx! {
                 NumberInput::<T> {
-                    value: value,
+                    value: value.into_signal(),
                     min: min,
                     max: max,
                     class: class,
@@ -278,16 +277,17 @@ mod tests {
     }
 
     #[rstest]
-    #[case::increment_without_max(5, None, "6")]
-    #[case::increment_below_max(5, Some(6), "6")]
-    #[case::increment_capped_by_max(10, Some(10), "10")]
-    #[case::increment_capped_by_max_of_type(255, None, "255")]
+    #[case::increment_without_max(5, None, 6)]
+    #[case::increment_below_max(5, Some(6), 6)]
+    #[case::increment_capped_by_max(10, Some(10), 10)]
+    #[case::increment_capped_by_max_of_type(255, None, 255)]
     fn number_input_increment_button(
         #[case] initial_value: u8,
         #[case] max: Option<u8>,
-        #[case] expected_value: &str,
+        #[case] expected_value: u8,
     ) {
-        let mut dom = mount_number_input(initial_value, None, max, None, false);
+        let (value_signal, value_validator) = TestSignal::with_validator(initial_value);
+        let mut dom = mount_number_input(value_signal, None, max, None, false);
 
         assert_that!(dom.find("input")).has_attribute("value", format!("{}", initial_value));
 
@@ -295,7 +295,8 @@ mod tests {
             .at(dom.find_all("button")[0])
             .raise(&mut dom);
 
-        assert_that!(dom.find("input")).has_attribute("value", expected_value);
+        assert_that!(dom.find("input")).has_attribute("value", format!("{}", expected_value));
+        assert_that!(value_validator.get()).is_equal_to(expected_value);
     }
 
     #[rstest]
@@ -308,7 +309,7 @@ mod tests {
         #[case] min: Option<i32>,
         #[case] expected_value: &str,
     ) {
-        let mut dom = mount_number_input(initial_value, min, None, None, false);
+        let mut dom = mount_number_input(TestSignal::new(initial_value), min, None, None, false);
 
         assert_that!(dom.find("input")).has_attribute("value", format!("{}", initial_value));
 
@@ -337,7 +338,7 @@ mod tests {
         #[case] input: &str,
         #[case] expected: &str,
     ) {
-        let mut dom = mount_number_input(initial_value, min, max, None, false);
+        let mut dom = mount_number_input(TestSignal::new(initial_value), min, max, None, false);
 
         FormEventType::Input
             .at(dom.find("input"))
@@ -355,7 +356,7 @@ mod tests {
     #[case::yes(true, "")]
     #[case::no(false, "0")]
     fn number_input_zero_as_empty(#[case] zero_as_empty: bool, #[case] expected: &str) {
-        let dom = mount_number_input(0usize, None, None, None, zero_as_empty);
+        let dom = mount_number_input(TestSignal::new(0usize), None, None, None, zero_as_empty);
         assert_that!(dom.find("input")).has_attribute("value", expected);
     }
 }

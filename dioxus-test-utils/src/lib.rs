@@ -1,5 +1,6 @@
 pub mod event;
 mod select;
+pub mod signal;
 
 use std::any::Any;
 use std::borrow::Borrow;
