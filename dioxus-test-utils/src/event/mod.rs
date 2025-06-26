@@ -2,10 +2,6 @@ mod focus;
 mod form;
 mod mouse;
 
-use std::any::Any;
-use std::rc::Rc;
-
-use dioxus_core::Event;
 use dioxus_html::{
     AnimationData,
     ClipboardData,
@@ -31,35 +27,47 @@ use dioxus_html::{
     WheelData,
 };
 
-use crate::NodeRef;
 pub use crate::event::focus::{FocusEventType, TestFocusData};
 pub use crate::event::form::{FormEventType, TestFormData};
 pub use crate::event::mouse::{MouseEventType, TestMouseData};
+use crate::{NodeId, NodeRef, TestDom};
 
-pub trait EventType {
-    type Data: 'static;
+pub trait EventType: Sized {
+    type Data: Default + 'static;
 
     fn name(self) -> &'static str;
+
+    fn at(self, node: NodeRef) -> TestEvent<Self> {
+        TestEvent::new(node, self)
+    }
 }
 
-impl<'dom> NodeRef<'dom> {
-    pub fn trigger_with<T: EventType>(self, event_type: T, data: T::Data) {
-        // TODO we should ensure that update() is called after each event
-        //  potential idea: offer method NodeRef::event(...) -> Event and TestDom::trigger(Event)
+pub struct TestEvent<T: EventType> {
+    pub(crate) node_id: NodeId,
+    pub(crate) event_type: T,
+    pub(crate) data: T::Data,
+}
 
-        let platform_event_data = PlatformEventData::new(Box::new(data));
-        let event = Event::new(Rc::new(platform_event_data) as Rc<dyn Any>, true);
-        let element_id = self
-            .nodes
-            .get_element_id(self.id)
-            .expect("cannot handle event for node without element ID");
-        self.virtual_dom
-            .runtime()
-            .handle_event(event_type.name(), event, element_id);
+impl<T: EventType> TestEvent<T> {
+    pub fn new(node: NodeRef, event_type: T) -> TestEvent<T> {
+        TestEvent {
+            node_id: node.id,
+            event_type,
+            data: T::Data::default(),
+        }
     }
 
-    pub fn trigger<T: EventType<Data: Default>>(self, event_type: T) {
-        self.trigger_with(event_type, T::Data::default())
+    pub fn with(self, data: T::Data) -> TestEvent<T> {
+        TestEvent { data, ..self }
+    }
+
+    /// Same as [TestDom::raise], but with inverted syntax to allow chaining with other methods.
+    ///
+    /// # Arguments
+    ///
+    /// * `dom`: The [TestDom] in which to raise this event.
+    pub fn raise(self, dom: &mut TestDom) {
+        dom.raise(self)
     }
 }
 

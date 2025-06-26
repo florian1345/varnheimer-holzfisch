@@ -8,9 +8,16 @@ use crate::event::EventType;
 
 #[derive(Clone)]
 pub struct TestFormData {
+    /// See [HasFormData::value].
     pub value: String,
+
+    /// See [HasFormData::valid].
     pub valid: bool,
+
+    /// See [HasFormData::values].
     pub values: HashMap<String, FormValue>,
+
+    /// See [HasFileData::files].
     pub files: Option<Arc<dyn FileEngine>>,
 }
 

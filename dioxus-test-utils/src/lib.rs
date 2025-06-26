@@ -1,35 +1,38 @@
 pub mod event;
 mod select;
 
+use std::any::Any;
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Debug, Formatter, Write};
 use std::ops::{Index, IndexMut};
+use std::rc::Rc;
 
 use dioxus_core::{
     AttributeValue,
     ComponentFunction,
     ElementId,
+    Event,
     Template,
     TemplateAttribute,
     TemplateNode,
     VirtualDom,
     WriteMutations,
 };
+use dioxus_html::PlatformEventData;
 use futures::FutureExt;
 use kernal::prelude::*;
 use kernal::{AssertThat, AssertThatData};
 use slab::Slab;
 
-use crate::event::TestHtmlEventConverter;
+use crate::event::{EventType, TestEvent, TestHtmlEventConverter};
 pub use crate::select::Find;
 
 #[derive(Clone, Copy)]
 pub struct NodeRef<'dom> {
     id: NodeId,
     nodes: &'dom Nodes,
-    virtual_dom: &'dom VirtualDom,
 }
 
 impl Debug for NodeRef<'_> {
@@ -628,23 +631,39 @@ impl TestDom {
         let mut writer = TestDomWriter::new();
         virtual_dom.rebuild(&mut writer);
 
-        TestDom {
+        let mut dom = TestDom {
             virtual_dom,
             writer,
-        }
+        };
+
+        dom.update();
+        dom
     }
 
-    pub fn update(&mut self) {
+    fn update(&mut self) {
         while self.virtual_dom.wait_for_work().now_or_never().is_some() {
             self.virtual_dom.render_immediate(&mut self.writer);
         }
+    }
+
+    pub fn raise(&mut self, event: TestEvent<impl EventType>) {
+        let platform_event_data = PlatformEventData::new(Box::new(event.data));
+        let dioxus_event = Event::new(Rc::new(platform_event_data) as Rc<dyn Any>, true);
+        let element_id = self
+            .writer
+            .nodes
+            .get_element_id(event.node_id)
+            .expect("cannot handle event for node without element ID");
+        self.virtual_dom
+            .runtime()
+            .handle_event(event.event_type.name(), dioxus_event, element_id);
+        self.update();
     }
 
     pub fn root_node(&self) -> NodeRef<'_> {
         NodeRef {
             id: self.writer.root_node_id,
             nodes: &self.writer.nodes,
-            virtual_dom: &self.virtual_dom,
         }
     }
 }

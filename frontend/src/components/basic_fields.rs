@@ -213,7 +213,13 @@ pub fn AptitudeInput(aptitude: Signal<Option<Aptitude>>) -> Element {
 
 #[cfg(test)]
 mod tests {
-    use dioxus_test_utils::event::{FocusEventType, FormEventType, MouseEventType, TestFormData};
+    use dioxus_test_utils::event::{
+        EventType,
+        FocusEventType,
+        FormEventType,
+        MouseEventType,
+        TestFormData,
+    };
     use dioxus_test_utils::{Find, NodeRefAssertions, TestDom};
     use kernal::prelude::*;
 
@@ -265,8 +271,9 @@ mod tests {
 
         assert_that!(dom.find("input")).has_attribute("value", "0");
 
-        dom.find_all("button")[0].trigger(MouseEventType::Click);
-        dom.update();
+        MouseEventType::Click
+            .at(dom.find_all("button")[0])
+            .raise(&mut dom);
 
         assert_that!(dom.find("input")).has_attribute("value", "1");
     }
@@ -275,16 +282,14 @@ mod tests {
     fn number_input_text_input() {
         let mut dom = mount_number_input(0usize, None, None, None, false);
 
-        dom.find("input").trigger_with(
-            FormEventType::Input,
-            TestFormData {
+        FormEventType::Input
+            .at(dom.find("input"))
+            .with(TestFormData {
                 value: "123".to_owned(),
                 ..Default::default()
-            },
-        );
-        dom.update();
-        dom.find("input").trigger(FocusEventType::Blur);
-        dom.update();
+            })
+            .raise(&mut dom);
+        FocusEventType::Blur.at(dom.find("input")).raise(&mut dom);
 
         assert_that!(dom.find("input")).has_attribute("value", "123");
     }
