@@ -63,19 +63,16 @@ pub fn NumberInput<T: Int>(
     class: Option<String>,
     #[props(default = false)] zero_as_empty: bool,
 ) -> Element {
-    eprintln!("component rendered");
     let mut text_value = use_signal(|| to_string(value(), zero_as_empty));
 
     use_effect(move || {
         let mut text_value = text_value();
-        eprintln!("in use_effect with {}", &text_value);
 
         if text_value.is_empty() {
             text_value.push('0');
         }
 
         if let Ok(parsed_value) = text_value.parse::<T>() {
-            eprintln!("value being set to {}", &parsed_value);
             value.set(clamp(parsed_value, min, max));
         }
     });
@@ -97,7 +94,6 @@ pub fn NumberInput<T: Int>(
                 },
 
                 oninput: move |event| {
-                    eprintln!("text value being set to {}", event.value());
                     text_value.set(event.value());
                 },
 
