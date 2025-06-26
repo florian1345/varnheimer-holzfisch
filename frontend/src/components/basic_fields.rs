@@ -1,5 +1,5 @@
 use std::fmt::Display;
-use std::num::NonZeroUsize;
+use std::num::{IntErrorKind, NonZeroUsize, ParseIntError};
 use std::str::FromStr;
 
 use dioxus::prelude::*;
@@ -8,9 +8,10 @@ use model::roll::Roll;
 use model::skill;
 use model::skill::SkillPoints;
 
-pub trait Int:
-    Clone + Copy + Display + Eq + FromStr + Ord + PartialEq + PartialOrd + 'static
-{
+pub trait Int: Clone + Copy + Display + Eq + FromStr<Err = ParseIntError> + Ord + 'static {
+    const MIN: Self;
+    const MAX: Self;
+
     fn is_zero(self) -> bool;
 
     fn saturating_dec(self) -> Self;
@@ -21,6 +22,9 @@ pub trait Int:
 macro_rules! impl_int {
     ($typ:ty) => {
         impl Int for $typ {
+            const MIN: $typ = <$typ>::MIN;
+            const MAX: $typ = <$typ>::MAX;
+
             fn is_zero(self) -> bool {
                 self == 0
             }
@@ -72,7 +76,14 @@ pub fn NumberInput<T: Int>(
             text_value.push('0');
         }
 
-        if let Ok(parsed_value) = text_value.parse::<T>() {
+        let parsed_value = match text_value.parse::<T>() {
+            Ok(parsed_value) => Some(parsed_value),
+            Err(err) if err.kind() == &IntErrorKind::PosOverflow => Some(T::MAX),
+            Err(err) if err.kind() == &IntErrorKind::NegOverflow => Some(T::MIN),
+            _ => None,
+        };
+
+        if let Some(parsed_value) = parsed_value {
             value.set(clamp(parsed_value, min, max));
         }
     });
@@ -222,6 +233,7 @@ mod tests {
     };
     use dioxus_test_utils::{Find, NodeRefAssertions, TestDom};
     use kernal::prelude::*;
+    use rstest::rstest;
 
     use super::*;
 
@@ -265,32 +277,85 @@ mod tests {
         )
     }
 
-    #[test]
-    fn number_input_increment_button() {
-        let mut dom = mount_number_input(0usize, None, None, None, false);
+    #[rstest]
+    #[case::increment_without_max(5, None, "6")]
+    #[case::increment_below_max(5, Some(6), "6")]
+    #[case::increment_capped_by_max(10, Some(10), "10")]
+    #[case::increment_capped_by_max_of_type(255, None, "255")]
+    fn number_input_increment_button(
+        #[case] initial_value: u8,
+        #[case] max: Option<u8>,
+        #[case] expected_value: &str,
+    ) {
+        let mut dom = mount_number_input(initial_value, None, max, None, false);
 
-        assert_that!(dom.find("input")).has_attribute("value", "0");
+        assert_that!(dom.find("input")).has_attribute("value", format!("{}", initial_value));
 
         MouseEventType::Click
             .at(dom.find_all("button")[0])
             .raise(&mut dom);
 
-        assert_that!(dom.find("input")).has_attribute("value", "1");
+        assert_that!(dom.find("input")).has_attribute("value", expected_value);
     }
 
-    #[test]
-    fn number_input_text_input() {
-        let mut dom = mount_number_input(0usize, None, None, None, false);
+    #[rstest]
+    #[case::decrement_without_min(0, None, "-1")]
+    #[case::decrement_above_min(5, Some(4), "4")]
+    #[case::decrement_capped_by_min(-3, Some(-3), "-3")]
+    #[case::decrement_capped_by_min_of_type(i32::MIN, None, &i32::MIN.to_string())]
+    fn number_input_decrement_button(
+        #[case] initial_value: i32,
+        #[case] min: Option<i32>,
+        #[case] expected_value: &str,
+    ) {
+        let mut dom = mount_number_input(initial_value, min, None, None, false);
+
+        assert_that!(dom.find("input")).has_attribute("value", format!("{}", initial_value));
+
+        MouseEventType::Click
+            .at(dom.find_all("button")[1])
+            .raise(&mut dom);
+
+        assert_that!(dom.find("input")).has_attribute("value", expected_value);
+    }
+
+    #[rstest]
+    #[case::entering_same_number(15, None, None, "15", "15")]
+    #[case::entering_invalid_number(15, None, None, "a", "15")]
+    #[case::without_bounds(0, None, None, "123", "123")]
+    #[case::within_bounds(0, Some(-100), Some(100), "-42", "-42")]
+    #[case::below_min(0, Some(-100), Some(100), "-123", "-100")]
+    #[case::above_max(0, Some(-100), Some(100), "123", "100")]
+    #[case::below_min_of_type_without_bounds(0, None, None, "-10000000000", &i32::MIN.to_string())]
+    #[case::above_max_of_type_without_bounds(0, None, None, "10000000000", &i32::MAX.to_string())]
+    #[case::below_min_of_type_with_bounds(0, Some(-123), None, "-10000000000", "-123")]
+    #[case::above_max_of_type_with_bounds(0, None, Some(123), "10000000000", "123")]
+    fn number_input_text_input(
+        #[case] initial_value: i32,
+        #[case] min: Option<i32>,
+        #[case] max: Option<i32>,
+        #[case] input: &str,
+        #[case] expected: &str,
+    ) {
+        let mut dom = mount_number_input(initial_value, min, max, None, false);
 
         FormEventType::Input
             .at(dom.find("input"))
             .with(TestFormData {
-                value: "123".to_owned(),
+                value: input.to_owned(),
                 ..Default::default()
             })
             .raise(&mut dom);
         FocusEventType::Blur.at(dom.find("input")).raise(&mut dom);
 
-        assert_that!(dom.find("input")).has_attribute("value", "123");
+        assert_that!(dom.find("input")).has_attribute("value", expected);
+    }
+
+    #[rstest]
+    #[case::yes(true, "")]
+    #[case::no(false, "0")]
+    fn number_input_zero_as_empty(#[case] zero_as_empty: bool, #[case] expected: &str) {
+        let dom = mount_number_input(0usize, None, None, None, zero_as_empty);
+        assert_that!(dom.find("input")).has_attribute("value", expected);
     }
 }
