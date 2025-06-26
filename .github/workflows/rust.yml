@@ -18,10 +18,11 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+    - uses: Swatinem/rust-cache@v2
     - name: Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev libxdo-dev
+        sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev
     - name: Version
       run: |
         rustup component add clippy
@@ -39,4 +40,4 @@ jobs:
     - name: Rustfmt
       run: cargo +nightly fmt --all -- --check
     - name: Documentation
-      run: cargo doc --verbose --all-features
+      run: cargo doc --verbose --all-features --no-deps
