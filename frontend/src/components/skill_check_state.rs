@@ -7,14 +7,14 @@ use model::roll::Roll;
 use model::skill;
 use model::skill::SkillPoints;
 
-use crate::components::basic_fields::{
+use crate::components::flex_break::FlexBreak;
+use crate::components::model_value_fields::{
     AptitudeInput,
     AttributeInput,
     FatePointInput,
     RollInput,
     SkillPointsInput,
 };
-use crate::components::flex_break::FlexBreak;
 
 fn get_aptitude(state: &PartialSkillCheckState) -> Option<Aptitude> {
     state.modifiers.available_modifiers().find_map(|modifier| {
