@@ -680,6 +680,8 @@ pub trait NodeRefAssertions {
     fn contains_only_text(self, expected_text: impl AsRef<str>) -> Self;
 
     fn has_attribute(self, name: impl AsRef<str>, value: impl AsRef<str>) -> Self;
+
+    fn has_value(self, value: impl AsRef<str>) -> Self;
 }
 
 impl<'dom, N: Borrow<NodeRef<'dom>>> NodeRefAssertions for AssertThat<N> {
@@ -732,5 +734,9 @@ impl<'dom, N: Borrow<NodeRef<'dom>>> NodeRefAssertions for AssertThat<N> {
         });
 
         self
+    }
+
+    fn has_value(self, value: impl AsRef<str>) -> Self {
+        self.has_attribute("value", value)
     }
 }
