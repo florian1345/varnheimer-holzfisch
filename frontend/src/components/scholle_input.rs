@@ -3,6 +3,9 @@ use scholle::ScholleEvaluator;
 
 use crate::DEFAULT_SCHOLLE_CODE;
 
+const SCHOLLE_DOCUMENTATION_LINK: &str =
+    "https://github.com/florian1345/varnheimer-holzfisch/blob/master/scholle/README.md";
+
 #[component]
 pub fn ScholleInput(onnewevaluator: EventHandler<ScholleEvaluator>) -> Element {
     let mut code_signal = use_signal(|| DEFAULT_SCHOLLE_CODE.to_owned());
@@ -10,7 +13,7 @@ pub fn ScholleInput(onnewevaluator: EventHandler<ScholleEvaluator>) -> Element {
 
     rsx! {
         div {
-            class: "center-box",
+            class: "scholle-input center-box",
 
             textarea {
                 rows: 12,
@@ -29,6 +32,16 @@ pub fn ScholleInput(onnewevaluator: EventHandler<ScholleEvaluator>) -> Element {
                 },
 
                 { format!("{}", code_signal.read()) }
+            }
+
+            div {
+                class: "help",
+
+                a {
+                    href: SCHOLLE_DOCUMENTATION_LINK,
+
+                    "?"
+                }
             }
         }
 
