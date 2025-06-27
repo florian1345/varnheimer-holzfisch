@@ -76,6 +76,20 @@ pub fn NumberInput<T: Int>(
             Ok(parsed_value) => Some(parsed_value),
             Err(err) if err.kind() == &IntErrorKind::PosOverflow => Some(T::MAX),
             Err(err) if err.kind() == &IntErrorKind::NegOverflow => Some(T::MIN),
+            Err(err) if err.kind() == &IntErrorKind::InvalidDigit => {
+                let mut chars = text_value.chars();
+
+                if chars.next() == Some('-')
+                    && chars.next().is_some_and(|c| c.is_ascii_digit())
+                    && chars.all(|c| c.is_ascii_digit())
+                {
+                    // Negative overflow on unsigned integer ('-' is recognized as an invalid digit)
+                    Some(T::MIN)
+                }
+                else {
+                    None
+                }
+            },
             _ => None,
         };
 
@@ -235,20 +249,25 @@ mod tests {
     }
 
     #[rstest]
+    #[case::empty(15, None, None, "", "0")]
     #[case::entering_same_number(15, None, None, "15", "15")]
-    #[case::entering_invalid_number(15, None, None, "a", "15")]
+    #[case::entering_invalid_number_1(15, None, None, "a", "15")]
+    #[case::entering_invalid_number_2(15, None, None, "-a", "15")]
+    #[case::entering_invalid_number_3(15, None, None, "-1a", "15")]
+    #[case::entering_invalid_number_4(15, None, None, "-", "15")]
     #[case::without_bounds(0, None, None, "123", "123")]
     #[case::within_bounds(0, Some(-100), Some(100), "-42", "-42")]
     #[case::below_min(0, Some(-100), Some(100), "-123", "-100")]
     #[case::above_max(0, Some(-100), Some(100), "123", "100")]
     #[case::below_min_of_type_without_bounds(0, None, None, "-10000000000", &i32::MIN.to_string())]
     #[case::above_max_of_type_without_bounds(0, None, None, "10000000000", &i32::MAX.to_string())]
+    #[case::below_min_of_unsigned_integer(1u8, None, None, "-1", "0")]
     #[case::below_min_of_type_with_bounds(0, Some(-123), None, "-10000000000", "-123")]
     #[case::above_max_of_type_with_bounds(0, None, Some(123), "10000000000", "123")]
-    fn number_input_text_input(
-        #[case] initial_value: i32,
-        #[case] min: Option<i32>,
-        #[case] max: Option<i32>,
+    fn number_input_text_input<T: Int>(
+        #[case] initial_value: T,
+        #[case] min: Option<T>,
+        #[case] max: Option<T>,
         #[case] input: &str,
         #[case] expected: &str,
     ) {
