@@ -36,8 +36,7 @@ fn default_skill_check_state() -> PartialSkillCheckState {
     }
 }
 
-pub const DEFAULT_SCHOLLE_CODE: &str =
-    "(if is_success then quality_level else -1) + 2 * remaining_fate_points";
+pub const DEFAULT_SCHOLLE_CODE: &str = "quality_level";
 
 #[component]
 fn App() -> Element {
@@ -63,7 +62,7 @@ fn App() -> Element {
 
         ScholleInput {
             onnewevaluator: move |new_evaluator| evaluator_signal.set(new_evaluator),
-            error_signal: error_signal.clone(),
+            error_signal,
         }
 
         div {

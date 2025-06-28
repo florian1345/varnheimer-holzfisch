@@ -192,7 +192,7 @@ fn format_error(error: &ScholleError) -> String {
                 expected_types,
                 ..
             } => {
-                let expected_types_display = EnumerationDisplay::new(&*expected_types, "or");
+                let expected_types_display = EnumerationDisplay::new(expected_types, "or");
                 let expected_float = expected_types == &[ExpectedType::Type(Type::Float)];
                 let expected_int = expected_types == &[ExpectedType::Type(Type::Integer)];
                 let addition = if actual_type == &Type::Float && expected_int {
