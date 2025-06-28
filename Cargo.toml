@@ -10,6 +10,14 @@ resolver = "2"
 
 [profile]
 
+[profile.release]
+opt-level = 3
+lto = true
+panic = "abort"
+debug = false
+strip = true
+codegen-units = 1
+
 [profile.wasm-dev]
 inherits = "dev"
 opt-level = 1
