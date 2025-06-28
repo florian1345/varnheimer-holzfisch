@@ -23,6 +23,11 @@ button:hover {
     background-color: var(--hover-bg-color);
 }
 
+button:disabled {
+    border-color: var(--disabled-color);
+    background-color: var(--disabled-color);
+}
+
 .small-input {
     width: 10%;
 }

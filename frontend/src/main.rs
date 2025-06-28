@@ -41,9 +41,9 @@ pub const DEFAULT_SCHOLLE_CODE: &str = "quality_level";
 #[component]
 fn App() -> Element {
     let skill_check_state_signal = use_signal(default_skill_check_state);
-    let mut evaluator_signal = use_signal(|| ScholleEvaluator::new(DEFAULT_SCHOLLE_CODE).unwrap());
+    let evaluator = use_signal(|| Some(ScholleEvaluator::new(DEFAULT_SCHOLLE_CODE).unwrap()));
     let mut evaluation_outcome_signal: Signal<Option<EvaluationOutcome>> = use_signal(|| None);
-    let mut error_signal: Signal<Option<ScholleError>> = use_signal(|| None);
+    let mut error: Signal<Option<ScholleError>> = use_signal(|| None);
 
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
@@ -61,8 +61,8 @@ fn App() -> Element {
         }
 
         ScholleInput {
-            onnewevaluator: move |new_evaluator| evaluator_signal.set(new_evaluator),
-            error_signal,
+            evaluator,
+            error,
         }
 
         div {
@@ -70,19 +70,23 @@ fn App() -> Element {
 
             button {
                 class: "evaluate-button",
+                disabled: evaluator().is_none(),
 
                 onclick: move |_| {
                     let partial_state = &*skill_check_state_signal.read();
-                    let evaluator = &*evaluator_signal.read();
+                    let Some(evaluator) = evaluator()
+                    else {
+                        return;
+                    };
 
-                    match evaluate::evaluate(partial_state, evaluator) {
+                    match evaluate::evaluate(partial_state, &evaluator) {
                         Ok(outcome) => {
                             evaluation_outcome_signal.set(Some(outcome));
-                            error_signal.set(None);
+                            error.set(None);
                         },
                         Err(err) => {
                             evaluation_outcome_signal.set(None);
-                            error_signal.set(Some(err.into()));
+                            error.set(Some(err.into()));
                         }
                     }
                 },

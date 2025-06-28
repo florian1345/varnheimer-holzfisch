@@ -271,8 +271,8 @@ fn sync_scroll() {
 
 #[component]
 pub fn ScholleInput(
-    onnewevaluator: EventHandler<ScholleEvaluator>,
-    error_signal: Signal<Option<ScholleError>>,
+    evaluator: Signal<Option<ScholleEvaluator>>,
+    error: Signal<Option<ScholleError>>,
 ) -> Element {
     let mut code_signal = use_signal(|| DEFAULT_SCHOLLE_CODE.to_owned());
 
@@ -292,10 +292,7 @@ pub fn ScholleInput(
                     aria_hidden: true,
 
                     code {
-                        for segment in to_segments(
-                            &code_signal.read(),
-                            error_signal.read().as_ref(),
-                        ) {
+                        for segment in to_segments(&code_signal(), error().as_ref()) {
                             { render_scholle_code_segment(segment) }
                         }
                     }
@@ -309,12 +306,15 @@ pub fn ScholleInput(
                         code_signal.set(code.clone());
 
                         match ScholleEvaluator::new(code) {
-                            Ok(evaluator) => {
-                                error_signal.set(None);
-                                onnewevaluator.call(evaluator)
+                            Ok(new_evaluator) => {
+                                error.set(None);
+                                evaluator.set(Some(new_evaluator));
                             },
-                            Err(e) => error_signal.set(Some(e.into()))
-                        };
+                            Err(e) => {
+                                error.set(Some(e.into()));
+                                evaluator.set(None);
+                            },
+                        }
 
                         sync_scroll();
                     },
@@ -336,7 +336,7 @@ pub fn ScholleInput(
             }
         }
 
-        if let Some(error) = error_signal.read().as_ref() {
+        if let Some(error) = error().as_ref() {
             div {
                 class: "error center-box",
 
