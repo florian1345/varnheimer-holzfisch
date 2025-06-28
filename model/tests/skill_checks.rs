@@ -47,7 +47,7 @@ fn simple_call_with_zero_skill_points() {
         outcome_no_fate_points(SkillCheckOutcomeKind::CriticalSuccess(QualityLevel::ONE));
     let spectacular_success =
         outcome_no_fate_points(SkillCheckOutcomeKind::SpectacularSuccess(QualityLevel::ONE));
-    let mut engine = engine(format!(
+    let engine = engine(format!(
         "if is_spectacular_success then {} else \
             if is_critical_success then {} else \
             if is_success then {} else 0",
@@ -115,7 +115,7 @@ fn inaptitude_with_zero_skill_points() {
     // Failure
     //   the rest: (160k - 1 - 76 - 9963 - 77 - 2166) / 160k = 147717 / 160k
 
-    let mut engine = engine("quality_level");
+    let engine = engine("quality_level");
 
     let evaluated = engine
         .evaluate_partial(PartialSkillCheckState {
@@ -181,7 +181,7 @@ fn given_roll_with_fate_point_evaluates_options_correctly() {
         modifiers: ModifierState::from_modifiers([Modifier::FatePoint]),
     };
 
-    let mut engine = engine("quality_level");
+    let engine = engine("quality_level");
 
     let evaluated = engine.evaluate_all_actions(skill_check_state).unwrap();
 
@@ -225,7 +225,7 @@ fn given_roll_with_fate_point_evaluates_cost_of_fate_point_correctly() {
         modifiers: ModifierState::from_modifiers([Modifier::FatePoint]),
     };
 
-    let mut engine = engine("as_float(quality_level) + 1.5 * as_float(remaining_fate_points)");
+    let engine = engine("as_float(quality_level) + 1.5 * as_float(remaining_fate_points)");
 
     let evaluated = engine.evaluate_all_actions(skill_check_state).unwrap();
 
@@ -273,10 +273,9 @@ fn given_roll_with_aptitude_evaluates_options_correctly(
         modifiers: ModifierState::from_modifiers([aptitude_1]),
     };
 
-    let mut engine = engine(scholle_code);
+    let engine = engine(scholle_code);
 
     let evaluated = engine.evaluate_all_actions(skill_check_state).unwrap();
-
     let best_move = evaluated[0].clone();
 
     assert_that!(evaluated).has_length(4); // accept + reroll each die
@@ -307,10 +306,9 @@ fn given_roll_with_aptitude_evaluates_reroll_with_cap_correctly() {
         modifiers: ModifierState::from_modifiers([aptitude_1]),
     };
 
-    let mut engine = engine("quality_level");
+    let engine = engine("quality_level");
 
     let evaluated = engine.evaluate_all_actions(skill_check_state).unwrap();
-
     let best_move = evaluated[0].clone();
 
     assert_that!(evaluated).has_length(4); // accept + reroll each die
@@ -324,7 +322,7 @@ fn given_roll_with_aptitude_evaluates_reroll_with_cap_correctly() {
 #[test]
 fn evaluation_error() {
     // Fails at QL 4
-    let mut engine = engine("100 / (4 - quality_level)");
+    let engine = engine("100 / (4 - quality_level)");
     let state = PartialSkillCheckState {
         attributes: [Attribute::new(10), Attribute::new(10), Attribute::new(10)],
         roll_caps: [None, None, None],
@@ -346,7 +344,7 @@ fn evaluation_error() {
 
 #[test]
 fn evaluation_error_with_cap() {
-    let mut engine = engine("1.0 / as_float(4 - quality_level)");
+    let engine = engine("1.0 / as_float(4 - quality_level)");
     let state = PartialSkillCheckState {
         attributes: [Attribute::new(10), Attribute::new(10), Attribute::new(10)],
         roll_caps: [None, Some(Roll::new(10).unwrap()), None],

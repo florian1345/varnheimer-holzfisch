@@ -15,7 +15,7 @@ pub(crate) fn evaluate(
     partial_state: &PartialSkillCheckState,
     evaluator: &ScholleEvaluator,
 ) -> RuntimeResult<EvaluationOutcome> {
-    let mut engine = VarnheimerHolzfischEngine {
+    let engine = VarnheimerHolzfischEngine {
         evaluator: evaluator.clone(),
     };
 

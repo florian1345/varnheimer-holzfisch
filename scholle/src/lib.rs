@@ -32,7 +32,7 @@ impl ScholleEvaluator {
 impl SkillCheckEvaluator for ScholleEvaluator {
     type Error = RuntimeError;
 
-    fn evaluate(&mut self, outcome: &SkillCheckOutcome) -> RuntimeResult<Evaluation> {
+    fn evaluate(&self, outcome: &SkillCheckOutcome) -> RuntimeResult<Evaluation> {
         let value = evaluate(&self.expression, outcome)?;
 
         match value {
@@ -66,7 +66,7 @@ mod tests {
     #[case("quality_level", 2.0)]
     #[case("as_float(quality_level) / 4.0", 0.5)]
     fn valid(#[case] code: &str, #[case] expected_value: f64) {
-        let mut evaluator = ScholleEvaluator::new(code).unwrap();
+        let evaluator = ScholleEvaluator::new(code).unwrap();
 
         let evaluation = evaluator.evaluate(&outcome());
 
@@ -78,7 +78,7 @@ mod tests {
     #[case("pow(10.0, 1000.0)", f64::INFINITY)]
     #[case("-pow(10.0, 1000.0)", f64::NEG_INFINITY)]
     fn invalid_value(#[case] code: &str, #[case] expected_value: f64) {
-        let mut evaluator = ScholleEvaluator::new(code).unwrap();
+        let evaluator = ScholleEvaluator::new(code).unwrap();
 
         let evaluation = evaluator.evaluate(&outcome());
 

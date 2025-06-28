@@ -1,3 +1,5 @@
+use rayon::prelude::*;
+
 use crate::check::outcome::SkillCheckOutcomeProbabilities;
 use crate::check::{
     PartialSkillCheckState,
@@ -15,9 +17,13 @@ pub struct VarnheimerHolzfischEngine<EvaluatorT> {
 
 const DIE_RESULT_PROBABILITY: Probability = Probability::new(1.0f64 / DICE_SIDES as f64).unwrap();
 
-impl<EvaluatorT: SkillCheckEvaluator> VarnheimerHolzfischEngine<EvaluatorT> {
+impl<EvaluatorT> VarnheimerHolzfischEngine<EvaluatorT>
+where
+    EvaluatorT: SkillCheckEvaluator + Send + Sync,
+    EvaluatorT::Error: Send,
+{
     pub fn evaluate_action(
-        &mut self,
+        &self,
         state: SkillCheckState,
         action: SkillCheckAction,
     ) -> Result<Evaluated<SkillCheckOutcomeProbabilities>, EvaluatorT::Error> {
@@ -38,7 +44,7 @@ impl<EvaluatorT: SkillCheckEvaluator> VarnheimerHolzfischEngine<EvaluatorT> {
     }
 
     pub fn evaluate_partial(
-        &mut self,
+        &self,
         mut state: PartialSkillCheckState,
     ) -> Result<Evaluated<SkillCheckOutcomeProbabilities>, EvaluatorT::Error> {
         if let Some(state) = state.as_skill_check_state() {
@@ -92,13 +98,13 @@ impl<EvaluatorT: SkillCheckEvaluator> VarnheimerHolzfischEngine<EvaluatorT> {
     }
 
     pub fn evaluate_all_actions(
-        &mut self,
+        &self,
         skill_check: SkillCheckState,
     ) -> Result<Vec<(SkillCheckAction, Evaluated<SkillCheckOutcomeProbabilities>)>, EvaluatorT::Error>
     {
         let mut result = skill_check
             .legal_actions()
-            .into_iter()
+            .into_par_iter()
             .map(|action| Ok((action, self.evaluate_action(skill_check.clone(), action)?)))
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -108,7 +114,7 @@ impl<EvaluatorT: SkillCheckEvaluator> VarnheimerHolzfischEngine<EvaluatorT> {
     }
 
     pub fn evaluate(
-        &mut self,
+        &self,
         skill_check: SkillCheckState,
     ) -> Result<Evaluated<SkillCheckOutcomeProbabilities>, EvaluatorT::Error> {
         Ok(self

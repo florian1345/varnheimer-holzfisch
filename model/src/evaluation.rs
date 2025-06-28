@@ -95,7 +95,7 @@ impl<T> Evaluated<T> {
 pub trait SkillCheckEvaluator {
     type Error;
 
-    fn evaluate(&mut self, outcome: &SkillCheckOutcome) -> Result<Evaluation, Self::Error>;
+    fn evaluate(&self, outcome: &SkillCheckOutcome) -> Result<Evaluation, Self::Error>;
 }
 
 #[cfg(test)]
