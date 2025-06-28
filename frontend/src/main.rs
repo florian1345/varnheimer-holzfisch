@@ -12,7 +12,7 @@ use crate::components::skill_check_state::SkillCheckStateForm;
 use crate::evaluate::EvaluationResult;
 
 const FAVICON: Asset = asset!("/assets/favicon.ico");
-const MAIN_CSS: Asset = asset!("/assets/main.css");
+const MAIN_CSS: Asset = asset!("/assets/main.scss");
 const HEADER_SVG: Asset = asset!("/assets/varnheimer-holzfisch.svg");
 
 fn main() {

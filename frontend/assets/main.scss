@@ -1,0 +1,71 @@
+@use "common-controls";
+@use "number-input";
+@use "scholle";
+@use "table";
+
+:root {
+    --bg-color: #2c2c2c;
+    --hover-bg-color: #383838;
+    --text-color: #e8e4d8;
+    --highlight-color: #e4e4e8;
+    --error-color: #ec8880;
+}
+
+/* App-wide styling */
+body {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 20px;
+}
+
+.center-box {
+    width: 640px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.header {
+    font-size: 40px;
+
+    height: 192px;
+    line-height: 100%;
+
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction: row;
+    gap: 32px;
+}
+
+.header img {
+    height: 100%;
+}
+
+.skill-check-state-form {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    flex-direction: row;
+    gap: 8px;
+}
+
+.flex-break {
+    flex-basis: 100%;
+    height: 0;
+}
+
+.evaluate-button {
+    margin-top: 24px;
+    border-radius: 8px;
+    padding: 8px 16px;
+}
+
+.error {
+    margin-top: 8px;
+    color: var(--error-color);
+}
+
+.info {
+    margin-top: 8px;
+}

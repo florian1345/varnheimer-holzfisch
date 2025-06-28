@@ -1,0 +1,38 @@
+.help {
+    width: 0;
+}
+
+.help > a {
+    position: relative;
+    top: 8px;
+    right: 30px;
+
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border-style: outset;
+    border-radius: 50%;
+
+    color: var(--text-color);
+    text-decoration: none;
+    text-align: center;
+
+    background-color: transparent;
+    opacity: 50%;
+}
+
+.help > a:hover {
+    opacity: 100%;
+    background-color: var(--hover-bg-color);
+}
+
+.scholle-input {
+    margin-top: 24px;
+    display: flex;
+    flex-direction: row;
+}
+
+.scholle-input > textarea {
+    width: 100%;
+    resize: none;
+}

@@ -1,0 +1,20 @@
+table {
+    margin-top: 8px;
+    border-width: 2px;
+}
+
+th {
+    padding: 8px;
+    border-width: 2px
+}
+
+td {
+    padding: 8px;
+    border-width: 1px 2px;
+}
+
+table, th, td {
+    border-style: solid;
+    border-color: var(--highlight-color);
+    border-collapse: collapse;
+}

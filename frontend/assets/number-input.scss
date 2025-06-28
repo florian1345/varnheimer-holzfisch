@@ -1,0 +1,32 @@
+.number-input {
+    height: 100%;
+    display: flex;
+    flex-direction: row;
+}
+
+.number-input > input {
+    width: 100%;
+}
+
+.number-input-buttons > div > button {
+    position: relative;
+    right: 20px;
+
+    height: 50%;
+    width: 20px;
+
+    padding: 0;
+    font-size: 9px;
+    border-radius: 0 0 5px 0;
+}
+
+.number-input-buttons > div > button:first-of-type {
+    border-radius: 0 5px 0 0;
+}
+
+.number-input-buttons > div {
+    width: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
