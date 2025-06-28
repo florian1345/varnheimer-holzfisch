@@ -302,6 +302,8 @@ pub fn ScholleInput(
                 }
 
                 textarea {
+                    spellcheck: false,
+
                     oninput: move |event| {
                         let code = event.value();
                         code_signal.set(code.clone());
