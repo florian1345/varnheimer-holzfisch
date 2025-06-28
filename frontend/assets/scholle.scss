@@ -4,8 +4,9 @@
 
 .help > a {
     position: relative;
-    top: 8px;
-    right: 30px;
+    top: 10px;
+    right: 10px;
+    transform: translateX(-100%);
 
     display: inline-block;
     width: 20px;
@@ -33,6 +34,7 @@
 }
 
 .scholle-input > textarea {
+    margin: 0 !important;
     width: 100%;
     resize: none;
 }
