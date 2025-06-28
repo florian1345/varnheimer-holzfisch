@@ -1,4 +1,4 @@
-input, textarea, button, .help > a {
+input, textarea, button, .help > a, pre {
     font-size: 14px;
     color: var(--text-color);
     background-color: var(--bg-color);
@@ -6,9 +6,13 @@ input, textarea, button, .help > a {
     border-width: 2px;
 }
 
-input, textarea {
+input, textarea, pre {
     border-radius: 5px;
     padding: 5px;
+}
+
+pre {
+    border-style: inset;
 }
 
 button {

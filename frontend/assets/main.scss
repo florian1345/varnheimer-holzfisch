@@ -7,8 +7,11 @@
     --bg-color: #2c2c2c;
     --hover-bg-color: #383838;
     --text-color: #e8e4d8;
+    --text-color-blue: #98b4dc;
     --highlight-color: #e4e4e8;
     --error-color: #ec8880;
+    --selection-color: var(--bg-color);
+    --selection-bg-color: var(--highlight-color);
 }
 
 /* App-wide styling */
@@ -17,6 +20,11 @@ body {
     color: var(--text-color);
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     margin: 20px;
+}
+
+::selection {
+    background-color: var(--selection-bg-color);
+    color: var(--selection-color);
 }
 
 .center-box {

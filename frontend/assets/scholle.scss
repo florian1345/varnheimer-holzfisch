@@ -33,8 +33,36 @@
     flex-direction: row;
 }
 
-.scholle-input > textarea {
+.scholle-input-textarea {
+    width: 100%;
+    height: 12em;
+}
+
+.scholle-input-textarea textarea, .scholle-input-textarea pre {
+    box-sizing: border-box;
     margin: 0 !important;
     width: 100%;
+    height: 100%;
+    font-family: monospace;
+
+    overflow: auto;
+    white-space: pre;
+}
+
+.scholle-input-textarea textarea {
     resize: none;
+
+    color: transparent;
+    background: transparent;
+    caret-color: var(--text-color);
+    position: relative;
+    transform: translateY(-100%);
+}
+
+.scholle-keyword {
+    font-weight: bold;
+}
+
+.scholle-number {
+    color: var(--text-color-blue);
 }
