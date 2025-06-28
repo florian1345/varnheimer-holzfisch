@@ -1,4 +1,5 @@
 mod components;
+pub(crate) mod display;
 mod evaluate;
 
 use dioxus::prelude::*;

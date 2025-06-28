@@ -1,10 +1,21 @@
 use dioxus::prelude::*;
-use scholle::error::ScholleError;
+use scholle::context::Type;
+use scholle::error::{
+    ContextError,
+    ExpectedType,
+    LexerError,
+    LexerErrorKind,
+    ParseError,
+    RuntimeError,
+    RuntimeErrorKind,
+    ScholleError,
+};
 use scholle::lexer::TokenKind;
 use scholle::span::CodeSpan;
 use scholle::{ScholleEvaluator, lexer};
 
 use crate::DEFAULT_SCHOLLE_CODE;
+use crate::display::EnumerationDisplay;
 
 const SCHOLLE_DOCUMENTATION_LINK: &str =
     "https://github.com/florian1345/varnheimer-holzfisch/blob/master/scholle/README.md";
@@ -107,11 +118,28 @@ fn to_segments<'code>(
         }
 
         let token_start = token.span.start_byte;
-        segments.push(ScholleCodeSegment {
-            segment: &code[current_segment_start..token_start],
-            highlighting: current_segment_highlighting,
-            error: current_error,
-        });
+
+        if current_error && error_span.end_byte < token_start {
+            // ensure we do not extend the error over the whitespace between it and the next token
+            segments.push(ScholleCodeSegment {
+                segment: &code[current_segment_start..error_span.end_byte],
+                highlighting: current_segment_highlighting,
+                error: true,
+            });
+
+            segments.push(ScholleCodeSegment {
+                segment: &code[error_span.end_byte..token_start],
+                highlighting: Highlighting::Ordinary,
+                error: false,
+            })
+        }
+        else {
+            segments.push(ScholleCodeSegment {
+                segment: &code[current_segment_start..token_start],
+                highlighting: current_segment_highlighting,
+                error: current_error,
+            });
+        }
 
         current_segment_highlighting = token_highlighting;
         current_segment_start = token_start;
@@ -138,6 +166,83 @@ fn to_segments<'code>(
     }
 
     segments
+}
+
+fn format_error(error: &ScholleError) -> String {
+    // TODO do we want to implement this kind of formatting in Scholle directly?
+
+    match error {
+        ScholleError::Lexer(LexerError { kind, .. }) => match kind {
+            LexerErrorKind::IntegerOverflow(value) => format!(
+                "Integer literal exceeds maximum value: {}\nInteger literals must be at most {}",
+                value,
+                i64::MAX
+            ),
+            LexerErrorKind::InvalidCharacter(c) => format!("Invalid character: '{}'", c),
+        },
+        ScholleError::Parse(ParseError::UnexpectedToken(token)) => {
+            format!("Unexpected token: '{}'", token.kind)
+        },
+        ScholleError::Context(context_error) => match context_error {
+            ContextError::UnresolvedReference { identifier, .. } => {
+                format!("Unresolved reference: '{}'", identifier)
+            },
+            ContextError::TypeError {
+                actual_type,
+                expected_types,
+                ..
+            } => {
+                let expected_types_display = EnumerationDisplay::new(&*expected_types, "or");
+                let expected_float = expected_types == &[ExpectedType::Type(Type::Float)];
+                let expected_int = expected_types == &[ExpectedType::Type(Type::Integer)];
+                let addition = if actual_type == &Type::Float && expected_int {
+                    "\nUse `as_int(...)` to convert to integer"
+                }
+                else if actual_type == &Type::Integer && expected_float {
+                    "\nUse `as_float(...)` to convert to float"
+                }
+                else {
+                    ""
+                };
+
+                format!(
+                    "Type error: expected {}, but found {}{}",
+                    expected_types_display, actual_type, addition
+                )
+            },
+            ContextError::CardinalityError {
+                parameter_count,
+                argument_count,
+                ..
+            } => format!(
+                "Incorrect number of arguments: expected {}, but found {}",
+                parameter_count, argument_count
+            ),
+        },
+        ScholleError::Runtime(RuntimeError { kind, .. }) => match kind {
+            RuntimeErrorKind::ArithmeticOverflow => "Arithmetic overflow\nOverflowing integer \
+                operations are forbidden to avoid unexpected evaluations"
+                .to_owned(),
+            RuntimeErrorKind::DivideByZero => "Division by zero".to_owned(),
+            &RuntimeErrorKind::InvalidResult(result) => {
+                let result = if result == f64::INFINITY {
+                    "Infinity".to_owned()
+                }
+                else if result == f64::NEG_INFINITY {
+                    "-Infinity".to_owned()
+                }
+                else {
+                    result.to_string()
+                };
+
+                format!(
+                    "Invalid result: {}\nThis likely indicates an invalid arithmetic operation \
+                    somewhere in your code, such as a division by zero.",
+                    result
+                )
+            },
+        },
+    }
 }
 
 fn render_scholle_code_segment(segment: ScholleCodeSegment) -> Element {
@@ -229,11 +334,17 @@ pub fn ScholleInput(
             }
         }
 
-        if let Some(error) = error_signal.read().as_ref().cloned() {
+        if let Some(error) = error_signal.read().as_ref() {
             div {
                 class: "error center-box",
 
-                { format!("{}", error) }
+                for (i, line) in format_error(error).lines().enumerate() {
+                    if i > 0 {
+                        br {}
+                    }
+
+                    { line }
+                }
             }
         }
     }

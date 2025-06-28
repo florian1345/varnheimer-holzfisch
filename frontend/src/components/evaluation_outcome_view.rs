@@ -5,6 +5,7 @@ use model::check::SkillCheckAction;
 use model::check::modifier::{Modifier, ModifierAction};
 
 use crate::components::evaluated_probabilities_view::EvaluatedProbabilitiesView;
+use crate::display::EnumerationDisplay;
 use crate::evaluate::EvaluationOutcome;
 
 fn format_modifier(modifier: &Modifier, output: &mut String) -> bool {
@@ -47,32 +48,15 @@ fn format_modifier_action(action: &ModifierAction, output: &mut String) {
                 .filter(|&(_, reroll)| reroll)
                 .map(|(index, _)| index + 1)
                 .collect::<Vec<_>>();
-            let dice_count = die_numbers.len();
+            let die_numbers_display = EnumerationDisplay::new(&die_numbers, "and");
 
-            if dice_count == 1 {
-                write!(output, "reroll die {}", die_numbers[0]).unwrap();
-            }
-            else if dice_count == 2 {
-                write!(
-                    output,
-                    "reroll dice {} and {}",
-                    die_numbers[0], die_numbers[1]
-                )
-                .unwrap();
-            }
-            else {
-                write!(
-                    output,
-                    "reroll dice {}, and {}",
-                    die_numbers[0..(dice_count - 1)]
-                        .iter()
-                        .map(|number| format!("{}", number))
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                    die_numbers[dice_count - 1]
-                )
-                .unwrap();
-            }
+            write!(
+                output,
+                "reroll {} {}",
+                if die_numbers.len() > 1 { "dice" } else { "die" },
+                die_numbers_display
+            )
+            .unwrap();
         },
         ModifierAction::IncreaseSkillPoints(skill_points) => {
             write!(output, "increase skill points by {}", skill_points.as_i32()).unwrap()
