@@ -66,3 +66,10 @@
 .scholle-number {
     color: var(--text-color-blue);
 }
+
+.scholle-error {
+    text-decoration: underline;
+    text-decoration-color: var(--error-color);
+    text-decoration-style: wavy;
+    text-decoration-skip-ink: none;
+}

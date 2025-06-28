@@ -15,6 +15,10 @@ impl CodeSpan {
             end_byte: self.end_byte.max(other.end_byte),
         }
     }
+
+    pub fn contains(self, other: CodeSpan) -> bool {
+        self.start_byte <= other.start_byte && self.end_byte >= other.end_byte
+    }
 }
 
 impl Display for CodeSpan {
@@ -56,5 +60,31 @@ mod tests {
 
         assert_that!(code_span_1.union(code_span_2)).is_equal_to(expected);
         assert_that!(code_span_2.union(code_span_1)).is_equal_to(expected);
+    }
+
+    #[rstest]
+    #[case::equal(1..5, 1..5, true)]
+    #[case::true_subspan_1(1..5, 2..5, true)]
+    #[case::true_subspan_2(1..5, 1..4, true)]
+    #[case::true_subspan_3(1..5, 2..4, true)]
+    #[case::empty_subspan_1(1..1, 1..1, true)]
+    #[case::empty_subspan_1(1..2, 1..1, true)]
+    #[case::empty_subspan_1(1..2, 2..2, true)]
+    #[case::has_lower_bytes_1(5..10, 4..10, false)]
+    #[case::has_lower_bytes_2(5..10, 3..6, false)]
+    #[case::has_higher_bytes_1(5..10, 5..11, false)]
+    #[case::has_higher_bytes_2(5..10, 8..12, false)]
+    #[case::has_lower_and_higher_bytes(5..10, 4..11, false)]
+    #[case::disjunctive_1(2..3, 4..5, false)]
+    #[case::disjunctive_2(2..3, 3..4, false)]
+    fn code_span_contains(
+        #[case] lhs: Range<usize>,
+        #[case] rhs: Range<usize>,
+        #[case] expected: bool,
+    ) {
+        let lhs = CodeSpan::from(lhs);
+        let rhs = CodeSpan::from(rhs);
+
+        assert_that!(lhs.contains(rhs)).is_equal_to(expected);
     }
 }

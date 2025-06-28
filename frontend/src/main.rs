@@ -5,11 +5,12 @@ use dioxus::prelude::*;
 use model::check::{DICE_PER_SKILL_CHECK, PartialSkillCheckState};
 use model::skill;
 use scholle::ScholleEvaluator;
+use scholle::error::ScholleError;
 
-use crate::components::evaluation_result_view::EvaluationResultView;
+use crate::components::evaluation_outcome_view::EvaluationOutcomeView;
 use crate::components::scholle_input::ScholleInput;
 use crate::components::skill_check_state::SkillCheckStateForm;
-use crate::evaluate::EvaluationResult;
+use crate::evaluate::EvaluationOutcome;
 
 const FAVICON: Asset = asset!("/assets/favicon.ico");
 const MAIN_CSS: Asset = asset!("/assets/main.scss");
@@ -41,7 +42,8 @@ pub const DEFAULT_SCHOLLE_CODE: &str =
 fn App() -> Element {
     let skill_check_state_signal = use_signal(default_skill_check_state);
     let mut evaluator_signal = use_signal(|| ScholleEvaluator::new(DEFAULT_SCHOLLE_CODE).unwrap());
-    let mut evaluation_result_signal: Signal<Option<EvaluationResult>> = use_signal(|| None);
+    let mut evaluation_outcome_signal: Signal<Option<EvaluationOutcome>> = use_signal(|| None);
+    let mut error_signal: Signal<Option<ScholleError>> = use_signal(|| None);
 
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
@@ -60,6 +62,7 @@ fn App() -> Element {
 
         ScholleInput {
             onnewevaluator: move |new_evaluator| evaluator_signal.set(new_evaluator),
+            error_signal: error_signal.clone(),
         }
 
         div {
@@ -71,18 +74,26 @@ fn App() -> Element {
                 onclick: move |_| {
                     let partial_state = &*skill_check_state_signal.read();
                     let evaluator = &*evaluator_signal.read();
-                    let evaluation_result = evaluate::evaluate(partial_state, evaluator);
 
-                    evaluation_result_signal.set(Some(evaluation_result));
+                    match evaluate::evaluate(partial_state, evaluator) {
+                        Ok(outcome) => {
+                            evaluation_outcome_signal.set(Some(outcome));
+                            error_signal.set(None);
+                        },
+                        Err(err) => {
+                            evaluation_outcome_signal.set(None);
+                            error_signal.set(Some(err.into()));
+                        }
+                    }
                 },
 
                 "Evaluate"
             }
         }
 
-        if let Some(evaluation_result) = evaluation_result_signal.read().as_ref() {
-            EvaluationResultView {
-                evaluation_result: evaluation_result.clone(),
+        if let Some(evaluation_outcome) = evaluation_outcome_signal.read().as_ref() {
+            EvaluationOutcomeView {
+                evaluation_outcome: evaluation_outcome.clone(),
             }
         }
     }

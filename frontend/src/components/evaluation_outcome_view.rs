@@ -5,7 +5,7 @@ use model::check::SkillCheckAction;
 use model::check::modifier::{Modifier, ModifierAction};
 
 use crate::components::evaluated_probabilities_view::EvaluatedProbabilitiesView;
-use crate::evaluate::EvaluationResult;
+use crate::evaluate::EvaluationOutcome;
 
 fn format_modifier(modifier: &Modifier, output: &mut String) -> bool {
     match modifier {
@@ -104,32 +104,21 @@ fn format_action(action: &SkillCheckAction) -> String {
 }
 
 #[component]
-pub fn EvaluationResultView(evaluation_result: EvaluationResult) -> Element {
+pub fn EvaluationOutcomeView(evaluation_outcome: EvaluationOutcome) -> Element {
     rsx! {
         div {
             class: "center-box",
 
-            match evaluation_result {
-                Ok(evaluation_outcome) => rsx! {
-                    if let Some(recommended_action) = evaluation_outcome.recommended_action {
-                        div {
-                            class: "info",
+            if let Some(recommended_action) = evaluation_outcome.recommended_action {
+                div {
+                    class: "info",
 
-                            { format_action(&recommended_action) }
-                        }
-                    }
+                    { format_action(&recommended_action) }
+                }
+            }
 
-                    EvaluatedProbabilitiesView {
-                        evaluated_probabilities: evaluation_outcome.evaluated_probabilities,
-                    }
-                },
-                Err(error) => rsx! {
-                    div {
-                        class: "error",
-
-                        { format!("{}", error) }
-                    }
-                },
+            EvaluatedProbabilitiesView {
+                evaluated_probabilities: evaluation_outcome.evaluated_probabilities,
             }
         }
     }
@@ -148,41 +137,26 @@ mod tests {
     use model::evaluation::{Evaluated, Evaluation};
     use model::skill::SkillPoints;
     use rstest::rstest;
-    use scholle::error::{RuntimeError, RuntimeErrorKind};
 
     use super::*;
     use crate::evaluate::EvaluationOutcome;
 
-    fn mount(evaluation_result: EvaluationResult) -> TestDom {
+    fn mount(evaluation_outcome: EvaluationOutcome) -> TestDom {
         TestDom::new_with_props(
-            EvaluationResultView,
-            EvaluationResultViewProps { evaluation_result },
+            EvaluationOutcomeView,
+            EvaluationOutcomeViewProps { evaluation_outcome },
         )
     }
 
     #[test]
-    fn displays_error() {
-        let dom = mount(Err(RuntimeError {
-            kind: RuntimeErrorKind::ArithmeticOverflow,
-            span: (28..79).into(),
-        }));
-
-        let error_div = dom.find("div.center-box > div.error");
-
-        assert_that!(&error_div.children()[0])
-            .is_text("arithmetic operation caused overflow @ 28..79");
-        assert_that!(dom.try_find("div.info")).is_none();
-    }
-
-    #[test]
     fn displays_evaluation_without_recommended_action() {
-        let dom = mount(Ok(EvaluationOutcome {
+        let dom = mount(EvaluationOutcome {
             recommended_action: None,
             evaluated_probabilities: Evaluated {
                 evaluated: always_failure(),
                 evaluation: Evaluation::new(0.25).unwrap(),
             },
-        }));
+        });
 
         let info_div = dom.find("div.center-box > div.info");
 
@@ -268,13 +242,13 @@ mod tests {
         #[case] recommended_action: SkillCheckAction,
         #[case] expected_text: &str,
     ) {
-        let dom = mount(Ok(EvaluationOutcome {
+        let dom = mount(EvaluationOutcome {
             recommended_action: Some(recommended_action),
             evaluated_probabilities: Evaluated {
                 evaluated: always_failure(),
                 evaluation: Evaluation::new(0.25).unwrap(),
             },
-        }));
+        });
 
         assert_that!(dom.find("div.center-box").children()).has_length(2);
 

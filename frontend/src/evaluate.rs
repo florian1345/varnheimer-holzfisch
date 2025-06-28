@@ -11,12 +11,10 @@ pub(crate) struct EvaluationOutcome {
     pub(crate) evaluated_probabilities: Evaluated<SkillCheckOutcomeProbabilities>,
 }
 
-pub(crate) type EvaluationResult = RuntimeResult<EvaluationOutcome>;
-
 pub(crate) fn evaluate(
     partial_state: &PartialSkillCheckState,
     evaluator: &ScholleEvaluator,
-) -> EvaluationResult {
+) -> RuntimeResult<EvaluationOutcome> {
     let mut engine = VarnheimerHolzfischEngine {
         evaluator: evaluator.clone(),
     };

@@ -32,6 +32,16 @@ pub enum ParseError {
     UnexpectedToken(Token),
 }
 
+impl ParseError {
+    pub fn span(&self) -> CodeSpan {
+        match self {
+            ParseError::UnexpectedToken(token) => token.span,
+        }
+    }
+}
+
+pub type ParseResult<T> = Result<T, ParseError>;
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExpectedType {
     Type(Type),
@@ -52,8 +62,6 @@ impl From<Type> for ExpectedType {
         ExpectedType::Type(typ)
     }
 }
-
-pub type ParseResult<T> = Result<T, ParseError>;
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum ContextError {
@@ -82,6 +90,16 @@ pub enum ContextError {
         argument_count: usize,
         span: CodeSpan,
     },
+}
+
+impl ContextError {
+    pub fn span(&self) -> CodeSpan {
+        match self {
+            ContextError::UnresolvedReference { span, .. } => *span,
+            ContextError::TypeError { span, .. } => *span,
+            ContextError::CardinalityError { span, .. } => *span,
+        }
+    }
 }
 
 pub type ContextResult<T> = Result<T, ContextError>;
@@ -132,3 +150,38 @@ pub struct RuntimeError {
 }
 
 pub type RuntimeResult<T> = Result<T, RuntimeError>;
+
+#[derive(Clone, Debug, Error, PartialEq)]
+pub enum ScholleError {
+    #[error("{0}")]
+    Lexer(#[from] LexerError),
+    #[error("{0}")]
+    Parse(#[from] ParseError),
+    #[error("{0}")]
+    Context(#[from] ContextError),
+    #[error("{0}")]
+    Runtime(#[from] RuntimeError),
+}
+
+impl ScholleError {
+    pub fn span(&self) -> CodeSpan {
+        match self {
+            ScholleError::Lexer(e) => e.span,
+            ScholleError::Parse(e) => e.span(),
+            ScholleError::Context(e) => e.span(),
+            ScholleError::Runtime(e) => e.span,
+        }
+    }
+}
+
+impl From<InitializationError> for ScholleError {
+    fn from(value: InitializationError) -> ScholleError {
+        match value {
+            InitializationError::Lexer(e) => ScholleError::Lexer(e),
+            InitializationError::Parse(e) => ScholleError::Parse(e),
+            InitializationError::Context(e) => ScholleError::Context(e),
+        }
+    }
+}
+
+pub type ScholleResult<T> = Result<T, ScholleError>;
