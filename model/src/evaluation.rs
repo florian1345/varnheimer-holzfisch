@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg};
 
-use crate::check::outcome::SkillCheckOutcome;
+use crate::check::outcome::{SkillCheckOutcome, SkillCheckOutcomeProbabilities};
 use crate::probability::Probability;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -96,15 +96,30 @@ pub trait SkillCheckEvaluator {
     type Error;
 
     fn evaluate(&self, outcome: &SkillCheckOutcome) -> Result<Evaluation, Self::Error>;
+
+    fn evaluate_probabilities(
+        &self,
+        probabilities: &SkillCheckOutcomeProbabilities,
+    ) -> Result<Evaluation, Self::Error> {
+        let mut evaluation = Evaluation::ZERO;
+
+        for (outcome, probability) in probabilities.outcomes() {
+            evaluation += self.evaluate(outcome)? * probability;
+        }
+
+        Ok(evaluation)
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::convert::Infallible;
 
     use kernal::prelude::*;
     use rstest::rstest;
 
     use super::*;
+    use crate::check::outcome::SkillCheckOutcomeKind;
 
     #[rstest]
     #[case::neg_infinity(f64::NEG_INFINITY)]
@@ -169,5 +184,71 @@ mod tests {
         assert_that!(smaller.compare_evaluation(&larger)).is_equal_to(Ordering::Less);
         assert_that!(larger.compare_evaluation(&smaller)).is_equal_to(Ordering::Greater);
         assert_that!(smaller.compare_evaluation(&smaller)).is_equal_to(Ordering::Equal);
+    }
+
+    struct TestOutcome {
+        outcome: SkillCheckOutcome,
+        evaluation: Evaluation,
+        probability: Probability,
+    }
+
+    impl TestOutcome {
+        fn new(kind: SkillCheckOutcomeKind, evaluation: f64, probability: f64) -> TestOutcome {
+            TestOutcome {
+                outcome: SkillCheckOutcome {
+                    kind,
+                    remaining_modifiers: Default::default(),
+                },
+                evaluation: Evaluation::new(evaluation).unwrap(),
+                probability: Probability::new(probability).unwrap(),
+            }
+        }
+    }
+
+    #[rstest]
+    #[case([], 0.0)]
+    #[case([TestOutcome::new(SkillCheckOutcomeKind::Failure, 0.5, 0.8)], 0.4)]
+    #[case(
+        [
+            TestOutcome::new(SkillCheckOutcomeKind::SpectacularFailure, 0.2, 0.5),
+            TestOutcome::new(SkillCheckOutcomeKind::CriticalFailure, 0.3, 0.3),
+            TestOutcome::new(SkillCheckOutcomeKind::Failure, 0.4, 0.2)
+        ],
+        0.27
+    )]
+    fn evaluate_probabilities_works(
+        #[case] outcomes: impl IntoIterator<Item = TestOutcome>,
+        #[case] expected: f64,
+    ) {
+        struct TestEvaluator<'outcomes> {
+            outcomes: &'outcomes [TestOutcome],
+        }
+
+        impl<'outcomes> SkillCheckEvaluator for TestEvaluator<'outcomes> {
+            type Error = Infallible;
+
+            fn evaluate(&self, outcome: &SkillCheckOutcome) -> Result<Evaluation, Infallible> {
+                Ok(self
+                    .outcomes
+                    .iter()
+                    .find(|test_outcome| &test_outcome.outcome == outcome)
+                    .unwrap()
+                    .evaluation)
+            }
+        }
+
+        let outcomes = outcomes.into_iter().collect::<Vec<_>>();
+        let evaluator = TestEvaluator {
+            outcomes: &outcomes,
+        };
+        let probabilities = SkillCheckOutcomeProbabilities::from(
+            outcomes
+                .iter()
+                .map(|test_outcome| (test_outcome.outcome.clone(), test_outcome.probability)),
+        );
+
+        let evaluation = evaluator.evaluate_probabilities(&probabilities).unwrap();
+
+        assert_that!(evaluation.as_f64()).is_close_to(expected, 0.001);
     }
 }

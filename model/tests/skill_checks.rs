@@ -93,8 +93,8 @@ fn simple_call_with_zero_skill_points() {
         + critical_success_eval * critical_success_probability
         + spectacular_success_eval * spectacular_success_probability;
 
-    assert_that!(evaluated.evaluation).is_close_to(expected_evaluation, EPS);
     assert_that!(evaluated.evaluated).is_close_to(expected_probs, EPS);
+    assert_that!(evaluated.evaluation).is_close_to(expected_evaluation, EPS);
 }
 
 #[test]

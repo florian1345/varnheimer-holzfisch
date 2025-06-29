@@ -209,6 +209,10 @@ impl ModifierState {
             Entry::Vacant(_) => panic!("consumed modifier not available"),
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.available_modifiers.is_empty()
+    }
 }
 
 #[cfg(test)]

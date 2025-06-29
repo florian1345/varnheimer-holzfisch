@@ -81,6 +81,11 @@ impl SkillCheckOutcomeProbabilities {
             }
         }
     }
+
+    pub fn add_outcome(&mut self, outcome: SkillCheckOutcome, probability: Probability) {
+        let entry = self.map.entry(outcome).or_insert(Probability::ZERO);
+        *entry = (*entry).saturating_add(probability);
+    }
 }
 
 impl<T> From<T> for SkillCheckOutcomeProbabilities
