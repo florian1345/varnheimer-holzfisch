@@ -154,7 +154,7 @@ mod tests {
         #[case] expected_value: &str,
         #[case] expected_outcome: Option<Roll>,
     ) {
-        let (signal, validator) = TestSignal::with_validator(Roll::new(10));
+        let (signal, validator) = TestSignal::with_access(Roll::new(10));
         let mut dom = mount_roll_input(signal);
 
         enter_in_input(&mut dom, input);
@@ -179,7 +179,7 @@ mod tests {
         #[case] expected_value: &str,
         #[case] expected_outcome: skill::Attribute,
     ) {
-        let (signal, validator) = TestSignal::with_validator(skill::Attribute::new(10));
+        let (signal, validator) = TestSignal::with_access(skill::Attribute::new(10));
         let mut dom = mount_attribute_input(signal);
 
         enter_in_input(&mut dom, input);
@@ -204,7 +204,7 @@ mod tests {
         #[case] expected_value: &str,
         #[case] expected_outcome: SkillPoints,
     ) {
-        let (signal, validator) = TestSignal::with_validator(SkillPoints::new(10));
+        let (signal, validator) = TestSignal::with_access(SkillPoints::new(10));
         let mut dom = mount_skill_points_input(signal);
 
         enter_in_input(&mut dom, input);
@@ -219,7 +219,7 @@ mod tests {
     #[case("5", 5)]
     #[case("7", 6)]
     fn fate_point_input_input(#[case] input: &str, #[case] expected_outcome: usize) {
-        let (signal, validator) = TestSignal::with_validator(3);
+        let (signal, validator) = TestSignal::with_access(3);
         let mut dom = mount_fate_point_input(signal);
 
         enter_in_input(&mut dom, input);
@@ -252,7 +252,7 @@ mod tests {
         #[case] expected_value: &str,
         #[case] expected_outcome: Option<Aptitude>,
     ) {
-        let (signal, validator) = TestSignal::with_validator(Aptitude::new(1));
+        let (signal, validator) = TestSignal::with_access(Aptitude::new(1));
         let mut dom = mount_aptitude_input(signal);
 
         enter_in_input(&mut dom, input);

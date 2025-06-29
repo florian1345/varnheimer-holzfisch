@@ -130,6 +130,10 @@ impl<'dom> NodeRef<'dom> {
         matches!(self.kind(), NodeKind::Element { .. })
     }
 
+    pub fn is_placeholder(self) -> bool {
+        matches!(self.kind(), NodeKind::Placeholder)
+    }
+
     pub fn as_text(self) -> Option<&'dom str> {
         if let NodeKind::Text(text) = self.kind() {
             Some(text.as_str())
@@ -181,17 +185,30 @@ impl<'dom> NodeRef<'dom> {
             .map(|(_, value)| expect_text(value))
     }
 
-    pub fn children(self) -> Vec<NodeRef<'dom>> {
+    fn children_iter(self) -> Option<impl Iterator<Item = NodeRef<'dom>>> {
         if let NodeKind::Element { children, .. } = self.kind() {
-            children
-                .iter()
-                .copied()
-                .map(|id| NodeRef { id, ..self })
-                .collect()
+            Some(
+                children
+                    .iter()
+                    .copied()
+                    .map(move |id| NodeRef { id, ..self }),
+            )
         }
         else {
-            Vec::new()
+            None
         }
+    }
+
+    pub fn children(self) -> Vec<NodeRef<'dom>> {
+        self.children_iter()
+            .map(Iterator::collect)
+            .unwrap_or_else(Vec::new)
+    }
+
+    pub fn non_placeholder_children(self) -> Vec<NodeRef<'dom>> {
+        self.children_iter()
+            .map(|iter| iter.filter(|child| !child.is_placeholder()).collect())
+            .unwrap_or_else(Vec::new)
     }
 
     pub fn text_children(self) -> Vec<&'dom str> {
@@ -584,6 +601,13 @@ impl WriteMutations for TestDomWriter {
     }
 
     fn set_node_text(&mut self, value: &str, id: ElementId) {
+        if let NodeKind::Text(text) = &mut self.nodes[id].kind {
+            *text = value.to_owned();
+            return;
+        }
+
+        // TODO is the rest actually relevant?
+
         for child_id in self.nodes[id].children().to_owned() {
             self.nodes.remove(child_id);
         }

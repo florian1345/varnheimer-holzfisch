@@ -214,7 +214,7 @@ mod tests {
         #[case] max: Option<u8>,
         #[case] expected_value: u8,
     ) {
-        let (value_signal, value_validator) = TestSignal::with_validator(initial_value);
+        let (value_signal, value_access) = TestSignal::with_access(initial_value);
         let mut dom = mount_number_input(value_signal, None, max, None, false);
 
         assert_that!(dom.find("input")).has_attribute("value", format!("{}", initial_value));
@@ -224,7 +224,7 @@ mod tests {
             .raise(&mut dom);
 
         assert_that!(dom.find("input")).has_attribute("value", format!("{}", expected_value));
-        assert_that!(value_validator.get()).is_equal_to(expected_value);
+        assert_that!(value_access.get()).is_equal_to(expected_value);
     }
 
     #[rstest]
