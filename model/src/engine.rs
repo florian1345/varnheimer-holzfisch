@@ -162,7 +162,7 @@ impl PartialOutcomeProbabilities {
         *self.0.entry(outcome).or_insert(Probability::ZERO) += probability;
     }
 
-    fn to_skill_check_outcome_probabilities_without_modifiers(
+    fn into_skill_check_outcome_probabilities_without_modifiers(
         self,
     ) -> SkillCheckOutcomeProbabilities {
         let mut outcome_probabilities = SkillCheckOutcomeProbabilities::default();
@@ -234,8 +234,8 @@ where
             current_outcome_probabilities = next_outcome_probabilities;
         }
 
-        let outcome_probabilities =
-            current_outcome_probabilities.to_skill_check_outcome_probabilities_without_modifiers();
+        let outcome_probabilities = current_outcome_probabilities
+            .into_skill_check_outcome_probabilities_without_modifiers();
         let evaluation = self
             .evaluator
             .evaluate_probabilities(&outcome_probabilities)?;

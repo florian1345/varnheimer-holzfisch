@@ -202,13 +202,13 @@ impl<'dom> NodeRef<'dom> {
     pub fn children(self) -> Vec<NodeRef<'dom>> {
         self.children_iter()
             .map(Iterator::collect)
-            .unwrap_or_else(Vec::new)
+            .unwrap_or_default()
     }
 
     pub fn non_placeholder_children(self) -> Vec<NodeRef<'dom>> {
         self.children_iter()
             .map(|iter| iter.filter(|child| !child.is_placeholder()).collect())
-            .unwrap_or_else(Vec::new)
+            .unwrap_or_default()
     }
 
     pub fn text_children(self) -> Vec<&'dom str> {
