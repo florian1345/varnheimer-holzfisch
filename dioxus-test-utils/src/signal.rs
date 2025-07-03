@@ -47,8 +47,10 @@ impl<T> TestSignalAccess<T> {
     ///
     /// If no signal has been linked to this access.
     pub fn set(&self, value: T, dom: &mut TestDom) {
-        let mut signal = self.0.signal.write().unwrap();
-        signal
+        self.0
+            .signal
+            .write()
+            .unwrap()
             .as_mut()
             .expect("test signal has not yet been linked")
             .set(value);

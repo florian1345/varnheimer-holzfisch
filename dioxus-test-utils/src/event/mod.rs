@@ -2,6 +2,7 @@ mod focus;
 mod form;
 mod mouse;
 
+use dioxus_core::prelude::EventHandler;
 use dioxus_html::{
     AnimationData,
     ClipboardData,
@@ -26,6 +27,8 @@ use dioxus_html::{
     VisibleData,
     WheelData,
 };
+use futures::channel::mpsc;
+use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 
 pub use crate::event::focus::{FocusEventType, TestFocusData};
 pub use crate::event::form::{FormEventType, TestFormData};
@@ -161,4 +164,30 @@ impl HtmlEventConverter for TestHtmlEventConverter {
     fn convert_wheel_data(&self, _: &PlatformEventData) -> WheelData {
         todo!()
     }
+}
+
+#[derive(Clone)]
+pub struct EventSender<T>(UnboundedSender<T>);
+
+impl<T> PartialEq for EventSender<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.same_receiver(&other.0)
+    }
+}
+
+impl<T: 'static> EventSender<T> {
+    pub fn into_event_handler(self) -> EventHandler<T> {
+        EventHandler::new(move |value| {
+            self.0
+                .unbounded_send(value)
+                .unwrap_or_else(|err| panic!("failed to send event: {}", err));
+        })
+    }
+}
+
+pub type EventReceiver<T> = UnboundedReceiver<T>;
+
+pub fn event_channel<T: 'static>() -> (EventSender<T>, EventReceiver<T>) {
+    let (sender, receiver) = mpsc::unbounded();
+    (EventSender(sender), receiver)
 }
