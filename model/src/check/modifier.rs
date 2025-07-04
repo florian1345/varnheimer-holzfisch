@@ -213,6 +213,11 @@ impl ModifierState {
     pub fn is_empty(&self) -> bool {
         self.available_modifiers.is_empty()
     }
+
+    pub fn retain(&mut self, predicate: impl Fn(&Modifier) -> bool) {
+        self.available_modifiers
+            .retain(|modifier, _| predicate(modifier));
+    }
 }
 
 #[cfg(test)]
