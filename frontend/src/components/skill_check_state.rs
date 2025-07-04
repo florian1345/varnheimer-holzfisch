@@ -1,11 +1,8 @@
-use std::array;
-
 use dioxus::prelude::*;
-use model::check::modifier::{Aptitude, Modifier, ModifierState};
+use model::check::modifier::{Aptitude, Modifier};
 use model::check::{DICE_PER_SKILL_CHECK, PartialSkillCheckState};
 use model::roll::Roll;
 use model::skill;
-use model::skill::SkillPoints;
 
 use crate::components::flex_break::FlexBreak;
 use crate::components::model_value_fields::{
@@ -27,35 +24,23 @@ fn get_aptitude(state: &PartialSkillCheckState) -> Option<Aptitude> {
     })
 }
 
-fn compose_signals<T: Clone + PartialEq, const N: usize>(
-    input_signals: &[Signal<T>; N],
-    output_signal: &mut Signal<[T; N]>,
-    default: impl Fn() -> T,
-) {
-    let mut new_output = array::from_fn(|_| default());
-
-    for (index, attribute_signal) in input_signals.iter().enumerate() {
-        new_output[index] = attribute_signal();
-    }
-
-    output_signal.set(new_output);
+fn exchange<T, const LEN: usize>(mut array: [T; LEN], index: usize, value: T) -> [T; LEN] {
+    array[index] = value;
+    array
 }
 
 #[component]
-fn AttributesForm(attributes: Signal<[skill::Attribute; DICE_PER_SKILL_CHECK]>) -> Element {
-    let attribute_signals: [Signal<skill::Attribute>; DICE_PER_SKILL_CHECK] =
-        array::from_fn(|index| use_signal(|| attributes()[index]));
-
-    use_effect(move || {
-        compose_signals(&attribute_signals, &mut attributes, || {
-            skill::Attribute::new(0)
-        })
-    });
-
+fn AttributesForm(
+    attributes: [skill::Attribute; DICE_PER_SKILL_CHECK],
+    on_change: EventHandler<[skill::Attribute; DICE_PER_SKILL_CHECK]>,
+) -> Element {
     rsx! {
         for index in 0..DICE_PER_SKILL_CHECK {
             AttributeInput {
-                attribute: attribute_signals[index],
+                attribute: attributes[index],
+                on_change: move |new_attribute| {
+                    on_change(exchange(attributes, index, new_attribute));
+                },
                 key: "attribute-{index}",
             }
         }
@@ -63,16 +48,15 @@ fn AttributesForm(attributes: Signal<[skill::Attribute; DICE_PER_SKILL_CHECK]>) 
 }
 
 #[component]
-fn RollsForm(rolls: Signal<[Option<Roll>; DICE_PER_SKILL_CHECK]>) -> Element {
-    let roll_signals: [Signal<Option<Roll>>; DICE_PER_SKILL_CHECK] =
-        array::from_fn(|index| use_signal(|| rolls()[index]));
-
-    use_effect(move || compose_signals(&roll_signals, &mut rolls, || None));
-
+fn RollsForm(
+    rolls: [Option<Roll>; DICE_PER_SKILL_CHECK],
+    on_change: EventHandler<[Option<Roll>; DICE_PER_SKILL_CHECK]>,
+) -> Element {
     rsx! {
         for index in 0..DICE_PER_SKILL_CHECK {
             RollInput {
-                roll: roll_signals[index],
+                roll: rolls[index],
+                on_change: move |new_roll| on_change(exchange(rolls, index, new_roll)),
                 key: "roll-{index}",
             }
         }
@@ -81,36 +65,6 @@ fn RollsForm(rolls: Signal<[Option<Roll>; DICE_PER_SKILL_CHECK]>) -> Element {
 
 #[component]
 pub fn SkillCheckStateForm(skill_check_state: Signal<PartialSkillCheckState>) -> Element {
-    let attributes_signal = use_signal(|| skill_check_state().attributes);
-    let skill_value_signal = use_signal(|| skill_check_state().skill_value);
-    let rolls_signal = use_signal(|| skill_check_state().fixed_rolls);
-    let fate_point_signal =
-        use_signal(|| skill_check_state().modifiers.count_of(Modifier::FatePoint));
-    let aptitude_signal = use_signal(|| get_aptitude(&skill_check_state()));
-
-    use_effect(move || {
-        let mut modifiers = ModifierState::default();
-
-        for _ in 0..fate_point_signal() {
-            modifiers.add(Modifier::FatePoint);
-        }
-
-        if let Some(aptitude) = aptitude_signal() {
-            modifiers.add(Modifier::Aptitude(aptitude));
-        }
-
-        skill_check_state.set(PartialSkillCheckState {
-            attributes: attributes_signal(),
-            roll_caps: [None; DICE_PER_SKILL_CHECK],
-            fixed_rolls: rolls_signal(),
-            skill_value: skill_value_signal(),
-            extra_quality_levels_on_success: None,
-            extra_skill_points_on_success: SkillPoints::new(0),
-            modifiers,
-            inaptitude: false,
-        });
-    });
-
     rsx! {
         div {
             class: "skill-check-state-form center-box",
@@ -118,13 +72,15 @@ pub fn SkillCheckStateForm(skill_check_state: Signal<PartialSkillCheckState>) ->
             "Attributes",
 
             AttributesForm {
-                attributes: attributes_signal,
+                attributes: skill_check_state().attributes,
+                on_change: move |attributes| skill_check_state.write().attributes = attributes,
             },
 
             "Skill Value",
 
             SkillPointsInput {
-                skill_points: skill_value_signal,
+                skill_points: skill_check_state().skill_value,
+                on_change: move |skill_value| skill_check_state.write().skill_value = skill_value,
             },
 
             FlexBreak {},
@@ -132,7 +88,8 @@ pub fn SkillCheckStateForm(skill_check_state: Signal<PartialSkillCheckState>) ->
             "Roll",
 
             RollsForm {
-                rolls: rolls_signal,
+                rolls: skill_check_state().fixed_rolls,
+                on_change: move |rolls| skill_check_state.write().fixed_rolls = rolls,
             },
 
             FlexBreak {},
@@ -142,13 +99,31 @@ pub fn SkillCheckStateForm(skill_check_state: Signal<PartialSkillCheckState>) ->
             "Fate Points",
 
             FatePointInput {
-                fate_point_count: fate_point_signal,
+                fate_point_count: skill_check_state().modifiers.count_of(Modifier::FatePoint),
+                on_change: move |fate_point_count| {
+                    let mut skill_check_state = skill_check_state.write();
+                    skill_check_state.modifiers
+                        .retain(|modifier| modifier != &Modifier::FatePoint);
+
+                    for _ in 0..fate_point_count {
+                        skill_check_state.modifiers.add(Modifier::FatePoint);
+                    }
+                }
             },
 
             "Aptitude Dice",
 
             AptitudeInput {
-                aptitude: aptitude_signal,
+                aptitude: get_aptitude(&skill_check_state()),
+                on_change: move |aptitude| {
+                    let mut skill_check_state = skill_check_state.write();
+                    skill_check_state.modifiers
+                        .retain(|modifier| !matches!(modifier, Modifier::Aptitude(_)));
+
+                    if let Some(aptitude) = aptitude {
+                        skill_check_state.modifiers.add(Modifier::Aptitude(aptitude));
+                    }
+                }
             }
         }
     }

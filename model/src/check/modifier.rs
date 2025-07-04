@@ -213,6 +213,11 @@ impl ModifierState {
     pub fn is_empty(&self) -> bool {
         self.available_modifiers.is_empty()
     }
+
+    pub fn retain(&mut self, predicate: impl Fn(&Modifier) -> bool) {
+        self.available_modifiers
+            .retain(|modifier, _| predicate(modifier));
+    }
 }
 
 #[cfg(test)]
@@ -329,5 +334,68 @@ mod tests {
 
         assert_that!(move || state.consume(Modifier::FatePoint))
             .panics_with_message("consumed modifier not available");
+    }
+
+    #[test]
+    fn retain_emtpy() {
+        let mut state = ModifierState::default();
+
+        state.retain(|_| true);
+
+        assert_that!(state.available_modifiers().collect::<Vec<_>>()).is_empty();
+    }
+
+    #[test]
+    fn retain_all_match() {
+        let modifiers = [
+            Modifier::FatePoint,
+            Modifier::Aptitude(Aptitude::new(1).unwrap()),
+        ];
+        let mut state = ModifierState::from_modifiers(modifiers);
+
+        state.retain(|modifier| modifier != &Modifier::ExtraQualityLevelOnSuccess);
+
+        assert_that!(state).is_equal_to(ModifierState::from_modifiers(modifiers));
+    }
+
+    #[test]
+    fn retain_none_match() {
+        let mut state = ModifierState::from_modifiers([
+            Modifier::FatePoint,
+            Modifier::Aptitude(Aptitude::new(1).unwrap()),
+        ]);
+
+        state.retain(|modifier| modifier == &Modifier::ExtraQualityLevelOnSuccess);
+
+        assert_that!(state.available_modifiers().collect::<Vec<_>>()).is_empty();
+    }
+
+    #[test]
+    fn retain_some_match() {
+        let mut state = ModifierState::from_modifiers([
+            Modifier::FatePoint,
+            Modifier::Aptitude(Aptitude::new(1).unwrap()),
+        ]);
+
+        state.retain(|modifier| modifier == &Modifier::FatePoint);
+
+        assert_that!(state).is_equal_to(ModifierState::from_modifiers([Modifier::FatePoint]));
+    }
+
+    #[test]
+    fn retain_with_higher_multiplicity() {
+        let mut state = ModifierState::from_modifiers([
+            Modifier::FatePoint,
+            Modifier::FatePoint,
+            Modifier::Aptitude(Aptitude::new(1).unwrap()),
+            Modifier::Aptitude(Aptitude::new(1).unwrap()),
+        ]);
+
+        state.retain(|modifier| modifier == &Modifier::FatePoint);
+
+        assert_that!(state).is_equal_to(ModifierState::from_modifiers([
+            Modifier::FatePoint,
+            Modifier::FatePoint,
+        ]));
     }
 }
