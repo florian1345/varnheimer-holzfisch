@@ -62,7 +62,7 @@ pub fn FatePointInput(fate_point_count: usize, on_change: EventHandler<usize>) -
             min: 0,
             max: 6,
             value: fate_point_count,
-            on_change: move |value| on_change(value),
+            on_change: on_change,
         }
     }
 }
