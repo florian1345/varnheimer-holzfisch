@@ -16,6 +16,7 @@ use crate::evaluate::EvaluationOutcome;
 const FAVICON: Asset = asset!("/assets/favicon.ico");
 const MAIN_CSS: Asset = asset!("/assets/main.scss");
 const HEADER_SVG: Asset = asset!("/assets/varnheimer-holzfisch.svg");
+const MATERIAL_ICONS: &str = "https://fonts.googleapis.com/icon?family=Material+Icons";
 
 fn main() {
     launch(App);
@@ -48,6 +49,7 @@ fn App() -> Element {
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
         document::Link { rel: "stylesheet", href: MAIN_CSS }
+        document::Link { rel: "stylesheet", href: MATERIAL_ICONS }
 
         div {
             class: "header",

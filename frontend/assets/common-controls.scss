@@ -1,4 +1,4 @@
-input, textarea, button, .help > a, pre {
+input, textarea, button, .help > a, pre, select {
     font-size: 14px;
     color: var(--text-color);
     background-color: var(--bg-color);
@@ -6,7 +6,7 @@ input, textarea, button, .help > a, pre {
     border-width: 2px;
 }
 
-input, textarea, pre {
+input, textarea, pre, select {
     border-radius: 5px;
     padding: 5px;
 }

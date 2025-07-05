@@ -15,6 +15,7 @@ use scholle::span::CodeSpan;
 use scholle::{ScholleEvaluator, lexer};
 
 use crate::DEFAULT_SCHOLLE_CODE;
+use crate::components::flex_break::FlexBreak;
 use crate::display::EnumerationDisplay;
 
 const SCHOLLE_DOCUMENTATION_LINK: &str =
@@ -277,6 +278,13 @@ pub fn ScholleInput(
     rsx! {
         div {
             class: "scholle-input center-box",
+
+            h3 {
+                class: "center-box",
+                "Outcome evaluation"
+            }
+
+            FlexBreak {}
 
             div {
                 class: "scholle-input-textarea",

@@ -194,6 +194,15 @@ impl ModifierState {
         }
     }
 
+    pub fn set_count(&mut self, modifier: Modifier, count: usize) {
+        if let Some(count) = NonZeroUsize::new(count) {
+            self.available_modifiers.insert(modifier, count);
+        }
+        else {
+            self.available_modifiers.remove(&modifier);
+        }
+    }
+
     pub fn consume(&mut self, modifier: Modifier) {
         match self.available_modifiers.entry(modifier) {
             Entry::Occupied(mut entry) => {
@@ -334,6 +343,58 @@ mod tests {
 
         assert_that!(move || state.consume(Modifier::FatePoint))
             .panics_with_message("consumed modifier not available");
+    }
+
+    #[test]
+    fn set_count_on_empty() {
+        let mut state = ModifierState::default();
+
+        state.set_count(Modifier::FatePoint, 3);
+
+        assert_that!(state).is_equal_to(ModifierState::from_modifiers([Modifier::FatePoint; 3]));
+    }
+
+    #[test]
+    fn set_count_on_non_empty() {
+        let mut state = ModifierState::from_modifiers([Modifier::FatePoint]);
+
+        state.set_count(Modifier::ExtraQualityLevelOnSuccess, 2);
+
+        assert_that!(state).is_equal_to(ModifierState::from_modifiers([
+            Modifier::FatePoint,
+            Modifier::ExtraQualityLevelOnSuccess,
+            Modifier::ExtraQualityLevelOnSuccess,
+        ]));
+    }
+
+    #[test]
+    fn set_count_already_existing() {
+        let mut state = ModifierState::from_modifiers([Modifier::FatePoint]);
+
+        state.set_count(Modifier::FatePoint, 2);
+
+        assert_that!(state).is_equal_to(ModifierState::from_modifiers([Modifier::FatePoint; 2]));
+    }
+
+    #[test]
+    fn set_count_to_zero() {
+        let mut state = ModifierState::from_modifiers([Modifier::FatePoint]);
+
+        state.set_count(Modifier::FatePoint, 0);
+
+        assert_that!(state).is_equal_to(ModifierState::default());
+    }
+
+    #[test]
+    fn set_count_to_zero_with_other_modifier() {
+        let mut state = ModifierState::from_modifiers([
+            Modifier::FatePoint,
+            Modifier::ExtraQualityLevelOnSuccess,
+        ]);
+
+        state.set_count(Modifier::ExtraQualityLevelOnSuccess, 0);
+
+        assert_that!(state).is_equal_to(ModifierState::from_modifiers([Modifier::FatePoint]));
     }
 
     #[test]
