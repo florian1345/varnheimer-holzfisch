@@ -1,28 +1,11 @@
 use dioxus::prelude::*;
-use model::check::modifier::{Aptitude, Modifier};
 use model::check::{DICE_PER_SKILL_CHECK, PartialSkillCheckState};
 use model::roll::Roll;
 use model::skill;
 
 use crate::components::flex_break::FlexBreak;
-use crate::components::model_value_fields::{
-    AptitudeInput,
-    AttributeInput,
-    FatePointInput,
-    RollInput,
-    SkillPointsInput,
-};
-
-fn get_aptitude(state: &PartialSkillCheckState) -> Option<Aptitude> {
-    state.modifiers.available_modifiers().find_map(|modifier| {
-        if let Modifier::Aptitude(aptitude) = modifier {
-            Some(aptitude)
-        }
-        else {
-            None
-        }
-    })
-}
+use crate::components::model_value_fields::{AttributeInput, RollInput, SkillPointsInput};
+use crate::components::modifier_state::ModifierStateInput;
 
 fn exchange<T, const LEN: usize>(mut array: [T; LEN], index: usize, value: T) -> [T; LEN] {
     array[index] = value;
@@ -94,36 +77,15 @@ pub fn SkillCheckStateForm(skill_check_state: Signal<PartialSkillCheckState>) ->
 
             FlexBreak {},
 
-            // TODO adapt the UI to represent the domain model more (list of modifiers)
+            h3 {
+                "Modifiers"
+            }
 
-            "Fate Points",
+            FlexBreak {},
 
-            FatePointInput {
-                fate_point_count: skill_check_state().modifiers.count_of(Modifier::FatePoint),
-                on_change: move |fate_point_count| {
-                    let mut skill_check_state = skill_check_state.write();
-                    skill_check_state.modifiers
-                        .retain(|modifier| modifier != &Modifier::FatePoint);
-
-                    for _ in 0..fate_point_count {
-                        skill_check_state.modifiers.add(Modifier::FatePoint);
-                    }
-                }
-            },
-
-            "Aptitude Dice",
-
-            AptitudeInput {
-                aptitude: get_aptitude(&skill_check_state()),
-                on_change: move |aptitude| {
-                    let mut skill_check_state = skill_check_state.write();
-                    skill_check_state.modifiers
-                        .retain(|modifier| !matches!(modifier, Modifier::Aptitude(_)));
-
-                    if let Some(aptitude) = aptitude {
-                        skill_check_state.modifiers.add(Modifier::Aptitude(aptitude));
-                    }
-                }
+            ModifierStateInput {
+                modifier_state: skill_check_state().modifiers.clone(),
+                on_change: move |modifiers| skill_check_state.write().modifiers = modifiers,
             }
         }
     }

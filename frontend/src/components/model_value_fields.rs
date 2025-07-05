@@ -1,5 +1,3 @@
-use std::num::NonZeroUsize;
-
 use dioxus::prelude::*;
 use model::check::modifier::Aptitude;
 use model::roll::Roll;
@@ -42,11 +40,12 @@ pub fn AttributeInput(
 pub fn SkillPointsInput(
     skill_points: SkillPoints,
     on_change: EventHandler<SkillPoints>,
+    #[props(default = false)] non_zero: bool,
 ) -> Element {
     rsx! {
         NumberInput::<i32> {
             class: "small-input",
-            min: 0,
+            min: if non_zero { 1 } else { 0 },
             max: 100,
             value: skill_points.as_i32(),
             on_change: move |value| on_change(SkillPoints::new(value)),
@@ -55,30 +54,14 @@ pub fn SkillPointsInput(
 }
 
 #[component]
-pub fn FatePointInput(fate_point_count: usize, on_change: EventHandler<usize>) -> Element {
+pub fn AptitudeInput(aptitude: Aptitude, on_change: EventHandler<Aptitude>) -> Element {
     rsx! {
         NumberInput::<usize> {
             class: "small-input",
-            min: 0,
-            max: 6,
-            value: fate_point_count,
-            on_change: on_change,
-        }
-    }
-}
-
-#[component]
-pub fn AptitudeInput(
-    aptitude: Option<Aptitude>,
-    on_change: EventHandler<Option<Aptitude>>,
-) -> Element {
-    rsx! {
-        NumberInput::<usize> {
-            class: "small-input",
-            min: 0,
+            min: 1,
             max: 2,
-            value: aptitude.map(Aptitude::max_dice).map(NonZeroUsize::get).unwrap_or(0),
-            on_change: move |value| on_change(Aptitude::new(value)),
+            value: aptitude.max_dice().get(),
+            on_change: move |value| on_change(Aptitude::new(value).unwrap()),
         }
     }
 }
@@ -93,17 +76,23 @@ mod tests {
     use super::*;
 
     macro_rules! gen_mount {
-        ($fn_name:ident($param_name:ident: $param_type:ty) for $component_name:ident) => {
-            fn $fn_name($param_name: $param_type, on_change: EventSender<$param_type>) -> TestDom {
+        ($fn_name:ident($param_name:ident: $param_type:ty $(, $extra_prop_name:ident: $extra_prop_type:ty)*) for $component_name:ident) => {
+            fn $fn_name(
+                $param_name: $param_type,
+                on_change: EventSender<$param_type>,
+                $($extra_prop_name: $extra_prop_type,)*
+            ) -> TestDom {
                 #[component]
                 fn Wrapper(
                     $param_name: $param_type,
                     on_change: EventSender<$param_type>,
+                    $($extra_prop_name: $extra_prop_type,)*
                 ) -> Element {
                     rsx! {
                         $component_name {
                             $param_name: $param_name,
                             on_change: on_change.into_event_handler(),
+                            $($extra_prop_name: $extra_prop_name,)*
                         }
                     }
                 }
@@ -113,6 +102,7 @@ mod tests {
                     WrapperProps {
                         $param_name,
                         on_change,
+                        $($extra_prop_name,)*
                     },
                 )
             }
@@ -121,9 +111,8 @@ mod tests {
 
     gen_mount!(mount_roll_input(roll: Option<Roll>) for RollInput);
     gen_mount!(mount_attribute_input(attribute: skill::Attribute) for AttributeInput);
-    gen_mount!(mount_skill_points_input(skill_points: SkillPoints) for SkillPointsInput);
-    gen_mount!(mount_fate_point_input(fate_point_count: usize) for FatePointInput);
-    gen_mount!(mount_aptitude_input(aptitude: Option<Aptitude>) for AptitudeInput);
+    gen_mount!(mount_skill_points_input(skill_points: SkillPoints, non_zero: bool) for SkillPointsInput);
+    gen_mount!(mount_aptitude_input(aptitude: Aptitude) for AptitudeInput);
 
     fn enter_in_input(dom: &mut TestDom, input: &str) {
         FormEventType::Input
@@ -182,53 +171,49 @@ mod tests {
     #[test]
     fn skill_points_input_display() {
         let (on_change, _) = event::event_channel();
-        let dom = mount_skill_points_input(SkillPoints::new(5), on_change);
+        let dom = mount_skill_points_input(SkillPoints::new(5), on_change, false);
         assert_that!(dom.find("input")).has_value("5");
     }
 
     #[rstest]
-    #[case("-1", SkillPoints::new(0))]
-    #[case("5", SkillPoints::new(5))]
-    #[case("101", SkillPoints::new(100))]
-    fn skill_points_input_input(#[case] input: &str, #[case] expected_outcome: SkillPoints) {
+    #[case("-1", false, SkillPoints::new(0))]
+    #[case("-1", true, SkillPoints::new(1))]
+    #[case("0", false, SkillPoints::new(0))]
+    #[case("0", true, SkillPoints::new(1))]
+    #[case("5", false, SkillPoints::new(5))]
+    #[case("5", true, SkillPoints::new(5))]
+    #[case("101", false, SkillPoints::new(100))]
+    #[case("101", true, SkillPoints::new(100))]
+    fn skill_points_input_input(
+        #[case] input: &str,
+        #[case] non_zero: bool,
+        #[case] expected_outcome: SkillPoints,
+    ) {
         let (on_change, mut on_change_receiver) = event::event_channel();
-        let mut dom = mount_skill_points_input(SkillPoints::new(10), on_change);
+        let mut dom = mount_skill_points_input(SkillPoints::new(10), on_change, non_zero);
 
         enter_in_input(&mut dom, input);
         assert_that!(on_change_receiver.try_next()).contains_value(Some(expected_outcome));
     }
 
     #[rstest]
-    #[case("-1", 0)]
-    #[case("5", 5)]
-    #[case("7", 6)]
-    fn fate_point_input_input(#[case] input: &str, #[case] expected_outcome: usize) {
-        let (on_change, mut on_change_receiver) = event::event_channel();
-        let mut dom = mount_fate_point_input(3, on_change);
-
-        enter_in_input(&mut dom, input);
-        assert_that!(on_change_receiver.try_next()).contains_value(Some(expected_outcome));
-    }
-
-    #[rstest]
-    #[case(None, "0")]
-    #[case(Aptitude::new(1), "1")]
-    #[case(Aptitude::new(2), "2")]
-    fn aptitude_input_display(#[case] value: Option<Aptitude>, #[case] expected_content: &str) {
+    #[case(Aptitude::new(1).unwrap(), "1")]
+    #[case(Aptitude::new(2).unwrap(), "2")]
+    fn aptitude_input_display(#[case] value: Aptitude, #[case] expected_content: &str) {
         let (on_change, _) = event::event_channel();
         let dom = mount_aptitude_input(value, on_change);
         assert_that!(dom.find("input")).has_value(expected_content);
     }
 
     #[rstest]
-    #[case("-1", None)]
-    #[case("0", None)]
-    #[case("", None)]
-    #[case("2", Aptitude::new(2))]
-    #[case("3", Aptitude::new(2))]
-    fn aptitude_input_input(#[case] input: &str, #[case] expected_outcome: Option<Aptitude>) {
+    #[case("-1", Aptitude::new(1).unwrap())]
+    #[case("0", Aptitude::new(1).unwrap())]
+    #[case("", Aptitude::new(1).unwrap())]
+    #[case("2", Aptitude::new(2).unwrap())]
+    #[case("3", Aptitude::new(2).unwrap())]
+    fn aptitude_input_input(#[case] input: &str, #[case] expected_outcome: Aptitude) {
         let (on_change, mut on_change_receiver) = event::event_channel();
-        let mut dom = mount_aptitude_input(Aptitude::new(1), on_change);
+        let mut dom = mount_aptitude_input(Aptitude::new(1).unwrap(), on_change);
 
         enter_in_input(&mut dom, input);
         assert_that!(on_change_receiver.try_next()).contains_value(Some(expected_outcome));
