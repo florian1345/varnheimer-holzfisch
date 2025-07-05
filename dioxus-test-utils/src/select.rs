@@ -336,6 +336,10 @@ pub trait Find<'dom>: Sized {
     fn find_first(self, selector: &str) -> Option<NodeRef<'dom>> {
         self.find_all(selector).into_iter().next()
     }
+
+    fn find_last(self, selector: &str) -> Option<NodeRef<'dom>> {
+        self.find_all(selector).into_iter().next_back()
+    }
 }
 
 impl<'dom> Find<'dom> for NodeRef<'dom> {

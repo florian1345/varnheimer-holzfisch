@@ -10,6 +10,7 @@ use std::fmt::{Debug, Formatter, Write};
 use std::ops::{Index, IndexMut};
 use std::rc::Rc;
 
+use dioxus_core::prelude::IntoAttributeValue;
 use dioxus_core::{
     AttributeValue,
     ComponentFunction,
@@ -703,9 +704,9 @@ pub trait NodeRefAssertions {
 
     fn contains_only_text(self, expected_text: impl AsRef<str>) -> Self;
 
-    fn has_attribute(self, name: impl AsRef<str>, value: impl AsRef<str>) -> Self;
+    fn has_attribute(self, name: impl AsRef<str>, value: impl IntoAttributeValue) -> Self;
 
-    fn has_value(self, value: impl AsRef<str>) -> Self;
+    fn has_value(self, value: impl IntoAttributeValue) -> Self;
 }
 
 impl<'dom, N: Borrow<NodeRef<'dom>>> NodeRefAssertions for AssertThat<N> {
@@ -740,19 +741,14 @@ impl<'dom, N: Borrow<NodeRef<'dom>>> NodeRefAssertions for AssertThat<N> {
         self
     }
 
-    fn has_attribute(self, name: impl AsRef<str>, value: impl AsRef<str>) -> Self {
+    fn has_attribute(self, name: impl AsRef<str>, value: impl IntoAttributeValue) -> Self {
         let node = *self.data().borrow();
         let expected_name = name.as_ref();
-        let expected_value = value.as_ref();
+        let expected_value = value.into_value();
 
         assert_that!(node.attributes()).contains_elements_matching(|(key, value)| {
             let key_matches = key.name == expected_name && key.namespace.is_none();
-            let value_matches = if let AttributeValue::Text(text) = value {
-                text.as_str() == expected_value
-            }
-            else {
-                false
-            };
+            let value_matches = *value == &expected_value;
 
             key_matches && value_matches
         });
@@ -760,7 +756,7 @@ impl<'dom, N: Borrow<NodeRef<'dom>>> NodeRefAssertions for AssertThat<N> {
         self
     }
 
-    fn has_value(self, value: impl AsRef<str>) -> Self {
+    fn has_value(self, value: impl IntoAttributeValue) -> Self {
         self.has_attribute("value", value)
     }
 }
