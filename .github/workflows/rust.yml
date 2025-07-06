@@ -71,3 +71,4 @@ jobs:
 
           remote-path: ./
           local-path: ./target/dx/frontend/release/web/public/
+          sync: full
