@@ -24,7 +24,7 @@ fn main() {
 
 const DEFAULT_ATTRIBUTE: skill::Attribute = skill::Attribute::new(10);
 
-fn default_skill_check_state() -> PartialSkillCheckState {
+pub(crate) fn default_skill_check_state() -> PartialSkillCheckState {
     PartialSkillCheckState {
         attributes: [DEFAULT_ATTRIBUTE; DICE_PER_SKILL_CHECK],
         roll_caps: [None; DICE_PER_SKILL_CHECK],
