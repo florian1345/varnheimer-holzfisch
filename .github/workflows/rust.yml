@@ -47,6 +47,12 @@ jobs:
     if: ${{ github.ref == 'refs/heads/master' }}
 
     steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev
       - name: Install Dioxus-CLI
         run: cargo install --verbose dioxus-cli@0.7.0-alpha.2
       - name: Build
