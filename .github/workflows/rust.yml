@@ -58,11 +58,14 @@ jobs:
       - name: Build
         run: dx bundle --verbose --release --package frontend --platform web
       - name: Deploy
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        uses: milanmk/actions-file-deployer@1.16
         with:
-          server: ${{ secrets.SFTP_HOST }}
-          username: ${{ secrets.SFTP_USER }}
-          password: ${{ secrets.SFTP_PASSWORD }}
-          server-dir: ./
-          local-dir: ./target/dx/frontend/release/web/public/
-          protocol: ftps
+          remote-protocol: sftp
+          remote-port: 6114
+
+          remote-host: ${{ secrets.SFTP_HOST }}
+          remote-user: ${{ secrets.SFTP_USER }}
+          remote-password: ${{ secrets.SFTP_PASSWORD }}
+
+          remote-path: ./
+          local-path: ./target/dx/frontend/release/web/public/
