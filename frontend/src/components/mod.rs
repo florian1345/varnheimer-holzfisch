@@ -1,3 +1,4 @@
+mod checkbox;
 pub(crate) mod evaluated_probabilities_view;
 pub(crate) mod evaluation_outcome_view;
 pub(crate) mod flex_break;

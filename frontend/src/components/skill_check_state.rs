@@ -3,6 +3,7 @@ use model::check::{DICE_PER_SKILL_CHECK, PartialSkillCheckState};
 use model::roll::Roll;
 use model::skill;
 
+use crate::components::checkbox::Checkbox;
 use crate::components::flex_break::FlexBreak;
 use crate::components::model_value_fields::{AttributeInput, RollInput, SkillPointsInput};
 use crate::components::modifier_state::ModifierStateInput;
@@ -74,6 +75,12 @@ pub fn SkillCheckStateForm(skill_check_state: Signal<PartialSkillCheckState>) ->
                 rolls: skill_check_state().fixed_rolls,
                 on_change: move |rolls| skill_check_state.write().fixed_rolls = rolls,
             },
+
+            Checkbox {
+                checked: skill_check_state().inaptitude,
+                on_change: move |inaptitude| skill_check_state.write().inaptitude = inaptitude,
+                label: "Inaptitude",
+            }
 
             FlexBreak {},
 
@@ -226,6 +233,20 @@ mod tests {
 
         assert_that!(skill_check_state_access.get()).is_equal_to(PartialSkillCheckState {
             modifiers: ModifierState::from_modifiers([Modifier::FatePoint]),
+            ..default_skill_check_state()
+        });
+    }
+
+    #[test]
+    fn input_inaptitude() {
+        let (mut dom, skill_check_state_access) = mount(default_skill_check_state());
+
+        MouseEventType::Click
+            .at(dom.find(".checkbox-box"))
+            .raise(&mut dom);
+
+        assert_that!(skill_check_state_access.get()).is_equal_to(PartialSkillCheckState {
+            inaptitude: true,
             ..default_skill_check_state()
         });
     }

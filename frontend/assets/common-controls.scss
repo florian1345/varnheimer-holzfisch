@@ -1,4 +1,4 @@
-input, textarea, button, .help > a, pre, select {
+input, textarea, button, .help > a, pre, select, .checkbox-box {
     font-size: 14px;
     color: var(--text-color);
     background-color: var(--bg-color);
@@ -6,12 +6,12 @@ input, textarea, button, .help > a, pre, select {
     border-width: 2px;
 }
 
-input, textarea, pre, select {
+input, textarea, pre, select, .checkbox-box {
     border-radius: 5px;
     padding: 5px;
 }
 
-pre {
+pre, .checkbox-box {
     border-style: inset;
 }
 
