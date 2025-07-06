@@ -64,5 +64,5 @@ jobs:
           username: ${{ secrets.SFTP_USER }}
           password: ${{ secrets.SFTP_PASSWORD }}
           server-dir: ./
-          local-dir: ./target/dx/frontend/release/web/public
+          local-dir: ./target/dx/frontend/release/web/public/
           protocol: ftps
