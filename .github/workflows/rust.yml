@@ -13,7 +13,6 @@ env:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
@@ -41,3 +40,23 @@ jobs:
       run: cargo +nightly fmt --all -- --check
     - name: Documentation
       run: cargo doc --verbose --all-features --no-deps
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [ build ]
+    if: ${{ github.ref == 'refs/heads/master' }}
+
+    steps:
+      - name: Install Dioxus-CLI
+        run: cargo install --verbose dioxus-cli@0.7.0-alpha.2
+      - name: Build
+        run: dx bundle --verbose --release --package frontend --platform web
+      - name: Deploy
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          server-dir: ./
+          local-dir: ./target/dx/frontend/release/web/public
+          protocol: ftps
