@@ -69,6 +69,6 @@ jobs:
           remote-user: ${{ secrets.SFTP_USER }}
           remote-password: ${{ secrets.SFTP_PASSWORD }}
 
-          remote-path: ./
+          remote-path: /files
           local-path: ./target/dx/frontend/release/web/public/
           sync: full
