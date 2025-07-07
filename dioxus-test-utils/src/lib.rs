@@ -14,6 +14,7 @@ use dioxus_core::prelude::IntoAttributeValue;
 use dioxus_core::{
     AttributeValue,
     ComponentFunction,
+    Element,
     ElementId,
     Event,
     Template,
@@ -647,13 +648,9 @@ pub struct TestDom {
 }
 
 impl TestDom {
-    pub fn new_with_props<P: Clone + 'static, M: 'static>(
-        root: impl ComponentFunction<P, M>,
-        root_props: P,
-    ) -> TestDom {
+    fn new_with_virtual_dom(mut virtual_dom: VirtualDom) -> TestDom {
         dioxus_html::events::set_event_converter(Box::new(TestHtmlEventConverter));
 
-        let mut virtual_dom = VirtualDom::new_with_props(root, root_props);
         let mut writer = TestDomWriter::new();
         virtual_dom.rebuild(&mut writer);
 
@@ -664,6 +661,17 @@ impl TestDom {
 
         dom.update();
         dom
+    }
+
+    pub fn new(root: fn() -> Element) -> TestDom {
+        TestDom::new_with_virtual_dom(VirtualDom::new(root))
+    }
+
+    pub fn new_with_props<P: Clone + 'static, M: 'static>(
+        root: impl ComponentFunction<P, M>,
+        root_props: P,
+    ) -> TestDom {
+        TestDom::new_with_virtual_dom(VirtualDom::new_with_props(root, root_props))
     }
 
     fn update(&mut self) {
