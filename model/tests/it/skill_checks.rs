@@ -1,5 +1,6 @@
 use kernal::prelude::*;
 use model::check::modifier::{Aptitude, Modifier, ModifierAction, ModifierState, Reroll};
+use model::check::outcome::SkillCheckOutcomeProbabilities;
 use model::check::{SkillCheckAction, SkillCheckState};
 use model::evaluation::Evaluation;
 use model::roll::Roll;
@@ -8,19 +9,29 @@ use rstest::rstest;
 
 use crate::*;
 
+fn roll(roll: u8) -> Roll {
+    Roll::new(roll).unwrap()
+}
+
+fn default() -> SkillCheckState {
+    SkillCheckState {
+        attributes: [Attribute::new(10), Attribute::new(10), Attribute::new(10)],
+        rolls: [roll(10), roll(10), roll(10)],
+        skill_value: SkillPoints::new(0),
+        extra_quality_levels_on_success: None,
+        extra_skill_points_on_success: SkillPoints::new(0),
+        modifiers: ModifierState::default(),
+    }
+}
+
 #[test]
 fn given_roll_with_fate_point_evaluates_options_correctly() {
     let skill_check_state = SkillCheckState {
         attributes: [Attribute::new(12), Attribute::new(11), Attribute::new(10)],
-        rolls: [
-            Roll::new(16).unwrap(),
-            Roll::new(4).unwrap(),
-            Roll::new(10).unwrap(),
-        ],
+        rolls: [roll(16), roll(4), roll(10)],
         skill_value: SkillPoints::new(7),
-        extra_quality_levels_on_success: None,
-        extra_skill_points_on_success: SkillPoints::new(0),
         modifiers: ModifierState::from_modifiers([Modifier::FatePoint]),
+        ..default()
     };
 
     let engine = engine("quality_level");
@@ -56,15 +67,10 @@ fn given_roll_with_fate_point_evaluates_options_correctly() {
 fn given_roll_with_fate_point_evaluates_cost_of_fate_point_correctly() {
     let skill_check_state = SkillCheckState {
         attributes: [Attribute::new(9), Attribute::new(13), Attribute::new(11)],
-        rolls: [
-            Roll::new(13).unwrap(),
-            Roll::new(10).unwrap(),
-            Roll::new(12).unwrap(),
-        ],
+        rolls: [roll(13), roll(10), roll(12)],
         skill_value: SkillPoints::new(8),
-        extra_quality_levels_on_success: None,
-        extra_skill_points_on_success: SkillPoints::new(0),
         modifiers: ModifierState::from_modifiers([Modifier::FatePoint]),
+        ..default()
     };
 
     let engine = engine("as_float(quality_level) + 1.5 * as_float(remaining_fate_points)");
@@ -104,15 +110,10 @@ fn given_roll_with_aptitude_evaluates_options_correctly(
     let aptitude_1 = Modifier::Aptitude(Aptitude::new(1).unwrap());
     let skill_check_state = SkillCheckState {
         attributes: [Attribute::new(15), Attribute::new(14), Attribute::new(9)],
-        rolls: [
-            Roll::new(16).unwrap(),
-            Roll::new(4).unwrap(),
-            Roll::new(14).unwrap(),
-        ],
+        rolls: [roll(16), roll(4), roll(14)],
         skill_value: SkillPoints::new(5),
-        extra_quality_levels_on_success: None,
-        extra_skill_points_on_success: SkillPoints::new(0),
         modifiers: ModifierState::from_modifiers([aptitude_1]),
+        ..default()
     };
 
     let engine = engine(scholle_code);
@@ -137,15 +138,10 @@ fn given_roll_with_aptitude_evaluates_reroll_with_cap_correctly() {
     let aptitude_1 = Modifier::Aptitude(Aptitude::new(1).unwrap());
     let skill_check_state = SkillCheckState {
         attributes: [Attribute::new(9), Attribute::new(7), Attribute::new(9)],
-        rolls: [
-            Roll::new(3).unwrap(),
-            Roll::new(8).unwrap(),
-            Roll::new(5).unwrap(),
-        ],
+        rolls: [roll(3), roll(8), roll(5)],
         skill_value: SkillPoints::new(7),
-        extra_quality_levels_on_success: None,
-        extra_skill_points_on_success: SkillPoints::new(0),
         modifiers: ModifierState::from_modifiers([aptitude_1]),
+        ..default()
     };
 
     let engine = engine("quality_level");
@@ -159,4 +155,87 @@ fn given_roll_with_aptitude_evaluates_reroll_with_cap_correctly() {
         action: ModifierAction::RerollByAptitude(Reroll::new([false, true, false]).unwrap()),
     });
     assert_that!(best_move.1.evaluation).is_close_to(eval(2.35), EPS);
+}
+
+#[test]
+fn given_aptitude_and_fate_point_prefers_aptitude_when_appropriate() {
+    // To get max QL, it is best to reroll the 16 by aptitude and save the fate point for a
+    // potential QL increase.
+    // If reroll is 0-11, increase QL after for QL 3 (55 %)
+    // If reroll is 12-15, increase QL after for QL 2 (20 %)
+    // If reroll is 16-20, reroll again with fate point (25 %)
+    //   If reroll is 0-11, we get QL 2 (25 % * 55 % = 13.75 %)
+    //   If reroll is 12-15, we get QL 1 (25 % * 20 % = 5 %)
+    //   If reroll is 16-20, we get Failure (25 % * 25 % = 6.25 %)
+
+    let aptitude_1 = Modifier::Aptitude(Aptitude::new(1).unwrap());
+    let skill_check_state = SkillCheckState {
+        attributes: [Attribute::new(11), Attribute::new(12), Attribute::new(13)],
+        rolls: [roll(16), roll(8), roll(5)],
+        skill_value: SkillPoints::new(4),
+        modifiers: ModifierState::from_modifiers([Modifier::FatePoint, aptitude_1]),
+        ..default()
+    };
+
+    let engine = engine("quality_level");
+
+    let evaluated = engine.evaluate_all_actions(skill_check_state).unwrap();
+    let best_move = evaluated[0].clone();
+
+    assert_that!(best_move.0).is_equal_to(SkillCheckAction::ConsumeModifier {
+        modifier: aptitude_1,
+        action: ModifierAction::RerollByAptitude(Reroll::new([true, false, false]).unwrap()),
+    });
+    assert_that!(best_move.1.evaluated).is_close_to(
+        SkillCheckOutcomeProbabilities::from([
+            outcome_prob(SkillCheckOutcomeKind::Success(QL_3), 0.55),
+            outcome_prob(SkillCheckOutcomeKind::Success(QL_2), 0.3375),
+            outcome_prob(SkillCheckOutcomeKind::Success(QL_1), 0.05),
+            outcome_prob(SkillCheckOutcomeKind::Failure, 0.0625),
+        ]),
+        EPS,
+    );
+    assert_that!(best_move.1.evaluation).is_close_to(eval(2.375), EPS);
+}
+
+#[test]
+fn given_aptitude_and_fate_point_prefers_fate_point_when_appropriate() {
+    // Optimization goal is success probability.
+    // Every die needs to be rerolled anyway, so it is optimal to hold back the aptitude to react to
+    // any dice still over the attribute after rerolling.
+    // We succeed if
+    // - the fate point rolls a critical success
+    //   - Probability: (19 * 3 + 1) / 8000 = 58 / 8000
+    // - the fate point rolls each die <= 12 immediately, but not a critical success
+    //   - Probability: (12 * 12 * 12 - (11 * 3 + 1)) / 8000 = 1694 / 8000
+    // - the fate point rolls two dice <= 12 and one die > 12, but not a critical success
+    //   - Probability: (12 * 12 * 8 * 3 - 8 * 3) / 8000 = 3432 / 8000
+    //   - AND the aptitude-reroll is <= 12 (Probability 60 %)
+    //   - Combined Probability: 41184 / 160000
+    // - the fate point rolls exactly one 1 and the others > 12, but not a critical failure
+    //   - Probability: (8 * 8 * 3 - 3) / 8000 = 189 / 8000
+    //   - AND the aptitude-reroll rolls a 1 (Probability 5 %)
+    //   - Combined Probability: 189 / 160000
+
+    let aptitude_1 = Modifier::Aptitude(Aptitude::new(1).unwrap());
+    let skill_check_state = SkillCheckState {
+        attributes: [Attribute::new(12), Attribute::new(12), Attribute::new(12)],
+        rolls: [roll(18), roll(18), roll(18)],
+        skill_value: SkillPoints::new(0),
+        modifiers: ModifierState::from_modifiers([Modifier::FatePoint, aptitude_1]),
+        ..default()
+    };
+
+    let engine = engine("if is_success then 1 else 0");
+
+    let evaluated = engine.evaluate_all_actions(skill_check_state).unwrap();
+    let best_move = evaluated[0].clone();
+
+    assert_that!(best_move.0).is_equal_to(SkillCheckAction::ConsumeModifier {
+        modifier: Modifier::FatePoint,
+        action: ModifierAction::RerollByFate(Reroll::new([true, true, true]).unwrap()),
+    });
+    // No assertion of exact probabilities: since the value of aptitude is not specified, it may or
+    // may not be used after the fate point succeeds anyway.
+    assert_that!(best_move.1.evaluation).is_close_to(eval(76_413.0 / 160_000.0), EPS);
 }
