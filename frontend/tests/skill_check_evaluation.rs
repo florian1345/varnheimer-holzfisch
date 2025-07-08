@@ -174,3 +174,18 @@ fn with_roll_and_modifier() {
     assert_table_row(table_rows[2], ["QL 1", "75.00"]);
     assert_table_row(table_rows[3], ["QL 2", "0.00"]);
 }
+
+#[test]
+fn with_runtime_error() {
+    let mut dom = TestDom::new(App);
+
+    enter_number(&mut dom, 0, "15");
+    enter_number(&mut dom, 1, "13");
+    enter_number(&mut dom, 2, "12");
+    enter_number(&mut dom, 3, "4");
+    enter_scholle(&mut dom, "100 / quality_level");
+    evaluate(&mut dom);
+
+    assert_that!(&dom.try_find("table")).is_none();
+    assert_that!(dom.find(".error")).contains_only_text("Division by zero");
+}

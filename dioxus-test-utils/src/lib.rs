@@ -741,7 +741,7 @@ impl<'dom, N: Borrow<NodeRef<'dom>>> NodeRefAssertions for AssertThat<N> {
     }
 
     fn contains_only_text(self, expected_text: impl AsRef<str>) -> Self {
-        let children = self.data().borrow().children();
+        let children = self.data().borrow().non_placeholder_children();
 
         assert_that!(&children).has_length(1);
         assert_that!(&children[0]).is_text(expected_text);
