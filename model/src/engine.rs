@@ -17,7 +17,7 @@ use crate::check::{
 use crate::evaluation::{Evaluated, Evaluation, SkillCheckEvaluator};
 use crate::probability::Probability;
 use crate::roll::{DICE_SIDES, Roll};
-use crate::skill::{Attribute, SkillPoints};
+use crate::skill::{Attribute, QualityLevel, SkillPoints};
 
 trait HasSkill {
     fn skill_value_mut(&mut self) -> &mut SkillPoints;
@@ -80,7 +80,7 @@ impl PartialOutcome {
             self.max_rolls += 1;
 
             if self.max_rolls >= DICE_PER_SKILL_CHECK - 1 {
-                // Make sure skill points of all failures are equal to maximize overlap
+                // Make sure skill points of all critical failures are equal to maximize overlap
                 self.skill_points = SkillPoints::new(-1);
                 return self;
             }
@@ -90,17 +90,6 @@ impl PartialOutcome {
         }
 
         self.skill_points -= attribute.missing_skill_points(roll);
-
-        if self.min_rolls >= DICE_PER_SKILL_CHECK - 1 {
-            // Success by definition => at least QL 1
-            // Set skill points to 3 to maximize overlap
-            self.skill_points = self.skill_points.max(SkillPoints::new(3));
-        }
-        else {
-            // Make sure skill points of all failures are equal to maximize overlap
-            self.skill_points = self.skill_points.max(SkillPoints::new(-1));
-        }
-
         self
     }
 
@@ -118,30 +107,57 @@ impl PartialOutcome {
         self
     }
 
-    fn to_outcome_kind(self) -> SkillCheckOutcomeKind {
-        if self.min_rolls < DICE_PER_SKILL_CHECK - 1 && self.max_rolls < DICE_PER_SKILL_CHECK - 1 {
+    fn to_outcome_kind(
+        self,
+        extra_sp_on_success: SkillPoints,
+        extra_ql_on_success: Option<QualityLevel>,
+    ) -> SkillCheckOutcomeKind {
+        let skill_points = if self.skill_points.is_negative() {
             self.skill_points
+        }
+        else {
+            self.skill_points + extra_sp_on_success
+        };
+
+        if self.min_rolls < DICE_PER_SKILL_CHECK - 1 && self.max_rolls < DICE_PER_SKILL_CHECK - 1 {
+            skill_points
                 .quality_level()
+                .map(|ql| {
+                    extra_ql_on_success
+                        .map(|extra_ql| ql.saturating_add(extra_ql))
+                        .unwrap_or(ql)
+                })
                 .map(SkillCheckOutcomeKind::Success)
                 .unwrap_or(SkillCheckOutcomeKind::Failure)
         }
-        else if self.min_rolls == DICE_PER_SKILL_CHECK - 1 {
-            SkillCheckOutcomeKind::CriticalSuccess(self.skill_points.quality_level().unwrap())
+        else if self.min_rolls >= DICE_PER_SKILL_CHECK - 1 {
+            let base_quality_level = skill_points.quality_level().unwrap_or(QualityLevel::ONE);
+            let quality_level = extra_ql_on_success
+                .map(|extra_ql| base_quality_level.saturating_add(extra_ql))
+                .unwrap_or(base_quality_level);
+
+            if self.min_rolls == DICE_PER_SKILL_CHECK - 1 {
+                SkillCheckOutcomeKind::CriticalSuccess(quality_level)
+            }
+            else {
+                SkillCheckOutcomeKind::SpectacularSuccess(quality_level)
+            }
         }
         else if self.max_rolls == DICE_PER_SKILL_CHECK - 1 {
             SkillCheckOutcomeKind::CriticalFailure
-        }
-        else if self.min_rolls == DICE_PER_SKILL_CHECK {
-            SkillCheckOutcomeKind::SpectacularSuccess(self.skill_points.quality_level().unwrap())
         }
         else {
             SkillCheckOutcomeKind::SpectacularFailure
         }
     }
 
-    fn to_outcome_without_modifiers(self) -> SkillCheckOutcome {
+    fn to_outcome_without_modifiers(
+        self,
+        extra_sp_on_success: SkillPoints,
+        extra_ql_on_success: Option<QualityLevel>,
+    ) -> SkillCheckOutcome {
         SkillCheckOutcome {
-            kind: self.to_outcome_kind(),
+            kind: self.to_outcome_kind(extra_sp_on_success, extra_ql_on_success),
             remaining_modifiers: Default::default(),
         }
     }
@@ -164,11 +180,16 @@ impl PartialOutcomeProbabilities {
 
     fn into_skill_check_outcome_probabilities_without_modifiers(
         self,
+        extra_sp_on_success: SkillPoints,
+        extra_ql_on_success: Option<QualityLevel>,
     ) -> SkillCheckOutcomeProbabilities {
         let mut outcome_probabilities = SkillCheckOutcomeProbabilities::default();
 
         for (outcome, probability) in self.0.into_iter() {
-            outcome_probabilities.add_outcome(outcome.to_outcome_without_modifiers(), probability);
+            outcome_probabilities.add_outcome(
+                outcome.to_outcome_without_modifiers(extra_sp_on_success, extra_ql_on_success),
+                probability,
+            );
         }
 
         outcome_probabilities
@@ -235,7 +256,10 @@ where
         }
 
         let outcome_probabilities = current_outcome_probabilities
-            .into_skill_check_outcome_probabilities_without_modifiers();
+            .into_skill_check_outcome_probabilities_without_modifiers(
+                state.extra_skill_points_on_success,
+                state.extra_quality_levels_on_success,
+            );
         let evaluation = self
             .evaluator
             .evaluate_probabilities(&outcome_probabilities)?;
