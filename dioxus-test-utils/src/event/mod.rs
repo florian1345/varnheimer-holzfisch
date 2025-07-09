@@ -180,7 +180,7 @@ impl<T: 'static> EventSender<T> {
         EventHandler::new(move |value| {
             self.0
                 .unbounded_send(value)
-                .unwrap_or_else(|err| panic!("failed to send event: {}", err));
+                .unwrap_or_else(|err| panic!("failed to send event: {err}"));
         })
     }
 }

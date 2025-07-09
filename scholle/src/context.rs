@@ -37,11 +37,11 @@ impl Display for Type {
                         write!(f, ", ")?;
                     }
 
-                    write!(f, "{}", parameter_type)?;
+                    write!(f, "{parameter_type}")?;
                 }
 
                 write!(f, ") -> ")?;
-                write!(f, "{}", return_type)
+                write!(f, "{return_type}")
             },
         }
     }

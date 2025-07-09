@@ -46,9 +46,9 @@ pub enum TokenKind {
 impl Display for TokenKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            TokenKind::Identifier(identifier) => write!(f, "{}", identifier),
-            TokenKind::IntLiteral(value) => write!(f, "{}", value),
-            TokenKind::FloatLiteral(value) => write!(f, "{}", value),
+            TokenKind::Identifier(identifier) => write!(f, "{identifier}"),
+            TokenKind::IntLiteral(value) => write!(f, "{value}"),
+            TokenKind::FloatLiteral(value) => write!(f, "{value}"),
             TokenKind::True => write!(f, "true"),
             TokenKind::False => write!(f, "false"),
             TokenKind::If => write!(f, "if"),
