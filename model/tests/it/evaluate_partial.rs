@@ -48,12 +48,12 @@ fn simple_call_with_zero_skill_points() {
     let critical_success_probability = 57.0 / 8000.0;
     let spectacular_success_probability = 1.0 / 8000.0;
     let expected_probs = SkillCheckOutcomeProbabilities::from([
-        outcome_prob(SpectacularFailure, 1.0 / 8000.0),
-        outcome_prob(CriticalFailure, 57.0 / 8000.0),
-        outcome_prob(Failure, (7000.0 - 88.0) / 8000.0),
-        outcome_prob(Success(QL_1), success_probability),
-        outcome_prob(CriticalSuccess(QL_1), critical_success_probability),
-        outcome_prob(SpectacularSuccess(QL_1), spectacular_success_probability),
+        outcome_prob_no_mod(SpectacularFailure, 1.0 / 8000.0),
+        outcome_prob_no_mod(CriticalFailure, 57.0 / 8000.0),
+        outcome_prob_no_mod(Failure, (7000.0 - 88.0) / 8000.0),
+        outcome_prob_no_mod(Success(QL_1), success_probability),
+        outcome_prob_no_mod(CriticalSuccess(QL_1), critical_success_probability),
+        outcome_prob_no_mod(SpectacularSuccess(QL_1), spectacular_success_probability),
     ]);
     let expected_evaluation = success_eval * prob(success_probability)
         + critical_success_eval * prob(critical_success_probability)
@@ -120,16 +120,16 @@ fn simple_call_with_skill_points() {
         .unwrap();
 
     let expected_probs = SkillCheckOutcomeProbabilities::from([
-        outcome_prob(SpectacularFailure, 1.0 / 8000.0),
-        outcome_prob(CriticalFailure, 57.0 / 8000.0),
-        outcome_prob(Failure, 2591.0 / 8000.0),
-        outcome_prob(SpectacularSuccess(QL_3), 1.0 / 8000.0),
-        outcome_prob(CriticalSuccess(QL_3), 33.0 / 8000.0),
-        outcome_prob(CriticalSuccess(QL_2), 9.0 / 8000.0),
-        outcome_prob(CriticalSuccess(QL_1), 15.0 / 8000.0),
-        outcome_prob(Success(QL_3), 1646.0 / 8000.0),
-        outcome_prob(Success(QL_2), 1384.0 / 8000.0),
-        outcome_prob(Success(QL_1), 2263.0 / 8000.0),
+        outcome_prob_no_mod(SpectacularFailure, 1.0 / 8000.0),
+        outcome_prob_no_mod(CriticalFailure, 57.0 / 8000.0),
+        outcome_prob_no_mod(Failure, 2591.0 / 8000.0),
+        outcome_prob_no_mod(SpectacularSuccess(QL_3), 1.0 / 8000.0),
+        outcome_prob_no_mod(CriticalSuccess(QL_3), 33.0 / 8000.0),
+        outcome_prob_no_mod(CriticalSuccess(QL_2), 9.0 / 8000.0),
+        outcome_prob_no_mod(CriticalSuccess(QL_1), 15.0 / 8000.0),
+        outcome_prob_no_mod(Success(QL_3), 1646.0 / 8000.0),
+        outcome_prob_no_mod(Success(QL_2), 1384.0 / 8000.0),
+        outcome_prob_no_mod(Success(QL_1), 2263.0 / 8000.0),
     ]);
     assert_that!(evaluated.evaluated).is_close_to(expected_probs, EPS);
     assert_that!(evaluated.evaluation).is_close_to(eval(7254.0 / 8000.0), EPS);
@@ -151,16 +151,16 @@ fn extra_quality_level() {
         .unwrap();
 
     let expected_probs = SkillCheckOutcomeProbabilities::from([
-        outcome_prob(SpectacularFailure, 1.0 / 8000.0),
-        outcome_prob(CriticalFailure, 57.0 / 8000.0),
-        outcome_prob(Failure, 2591.0 / 8000.0),
-        outcome_prob(SpectacularSuccess(QL_4), 1.0 / 8000.0),
-        outcome_prob(CriticalSuccess(QL_4), 33.0 / 8000.0),
-        outcome_prob(CriticalSuccess(QL_3), 9.0 / 8000.0),
-        outcome_prob(CriticalSuccess(QL_2), 15.0 / 8000.0),
-        outcome_prob(Success(QL_4), 1646.0 / 8000.0),
-        outcome_prob(Success(QL_3), 1384.0 / 8000.0),
-        outcome_prob(Success(QL_2), 2263.0 / 8000.0),
+        outcome_prob_no_mod(SpectacularFailure, 1.0 / 8000.0),
+        outcome_prob_no_mod(CriticalFailure, 57.0 / 8000.0),
+        outcome_prob_no_mod(Failure, 2591.0 / 8000.0),
+        outcome_prob_no_mod(SpectacularSuccess(QL_4), 1.0 / 8000.0),
+        outcome_prob_no_mod(CriticalSuccess(QL_4), 33.0 / 8000.0),
+        outcome_prob_no_mod(CriticalSuccess(QL_3), 9.0 / 8000.0),
+        outcome_prob_no_mod(CriticalSuccess(QL_2), 15.0 / 8000.0),
+        outcome_prob_no_mod(Success(QL_4), 1646.0 / 8000.0),
+        outcome_prob_no_mod(Success(QL_3), 1384.0 / 8000.0),
+        outcome_prob_no_mod(Success(QL_2), 2263.0 / 8000.0),
     ]);
     assert_that!(evaluated.evaluated).is_close_to(expected_probs, EPS);
     assert_that!(evaluated.evaluation).is_close_to(eval(15455.0 / 8000.0), EPS);
@@ -201,14 +201,14 @@ fn extra_skill_points_on_success() {
         .unwrap();
 
     let expected_probs = SkillCheckOutcomeProbabilities::from([
-        outcome_prob(SpectacularFailure, 1.0 / 8000.0),
-        outcome_prob(CriticalFailure, 57.0 / 8000.0),
-        outcome_prob(Failure, 4898.0 / 8000.0),
-        outcome_prob(SpectacularSuccess(QL_2), 1.0 / 8000.0),
-        outcome_prob(CriticalSuccess(QL_2), 35.0 / 8000.0),
-        outcome_prob(CriticalSuccess(QL_1), 22.0 / 8000.0),
-        outcome_prob(Success(QL_2), 1992.0 / 8000.0),
-        outcome_prob(Success(QL_1), 994.0 / 8000.0),
+        outcome_prob_no_mod(SpectacularFailure, 1.0 / 8000.0),
+        outcome_prob_no_mod(CriticalFailure, 57.0 / 8000.0),
+        outcome_prob_no_mod(Failure, 4898.0 / 8000.0),
+        outcome_prob_no_mod(SpectacularSuccess(QL_2), 1.0 / 8000.0),
+        outcome_prob_no_mod(CriticalSuccess(QL_2), 35.0 / 8000.0),
+        outcome_prob_no_mod(CriticalSuccess(QL_1), 22.0 / 8000.0),
+        outcome_prob_no_mod(Success(QL_2), 1992.0 / 8000.0),
+        outcome_prob_no_mod(Success(QL_1), 994.0 / 8000.0),
     ]);
     assert_that!(evaluated.evaluated).is_close_to(expected_probs, EPS);
     assert_that!(evaluated.evaluation).is_close_to(eval(9716.0 / 8000.0), EPS);
@@ -246,12 +246,12 @@ fn inaptitude_with_zero_skill_points() {
     let critical_success_probability = 76.0 / 160_000.0;
     let spectacular_success_probability = 1.0 / 160_000.0;
     let expected_probs = SkillCheckOutcomeProbabilities::from([
-        outcome_prob(SpectacularFailure, 58.0 / 160_000.0),
-        outcome_prob(CriticalFailure, 2_185.0 / 160_000.0),
-        outcome_prob(Failure, 147_717.0 / 160_000.0),
-        outcome_prob(Success(QL_1), success_probability),
-        outcome_prob(CriticalSuccess(QL_1), critical_success_probability),
-        outcome_prob(SpectacularSuccess(QL_1), spectacular_success_probability),
+        outcome_prob_no_mod(SpectacularFailure, 58.0 / 160_000.0),
+        outcome_prob_no_mod(CriticalFailure, 2_185.0 / 160_000.0),
+        outcome_prob_no_mod(Failure, 147_717.0 / 160_000.0),
+        outcome_prob_no_mod(Success(QL_1), success_probability),
+        outcome_prob_no_mod(CriticalSuccess(QL_1), critical_success_probability),
+        outcome_prob_no_mod(SpectacularSuccess(QL_1), spectacular_success_probability),
     ]);
     let expected_evaluation =
         eval(success_probability + critical_success_probability + spectacular_success_probability);
@@ -261,18 +261,103 @@ fn inaptitude_with_zero_skill_points() {
 }
 
 #[test]
+fn with_one_given_roll() {
+    // Attributes 10 10 10 Skill value 11 Second die fixed 5
+    // Critical Success (QL 4): 1 / 400 Value 50 (50 / 400)
+    // Success (QL 4): [1-10, 5, 1-11], [11, 5, 1-10] - Critical Success (QL 4)
+    // => 119 / 400 Value 25 (2975 / 400)
+    // Success (QL 3): [1-10, 5, 12-14], [11, 5, 11-13], [12, 5, 1-12], [13, 5, 1-11], [14, 5, 1-10]
+    // => 66 / 400 Value 16 (1056 / 400)
+    // Success (QL 2):
+    //   [1-10, 5, 15-17], [11, 5, 14-16], [12, 5, 13-15], [13, 5, 12-14], [14, 5, 11-13],
+    //   [15, 5, 1-12], [16, 5, 1-11], [17, 5, 1-10]
+    // => 75 / 400 Value 9 (675 / 400)
+    // Success (QL 1):
+    //   [1-10, 5, 18-20], [11, 5, 17-20], [12, 5, 16-19], [13, 5, 15-18], [14, 5, 14-17],
+    //   [15, 5, 13-16], [16, 5, 12-15], [17, 5, 11-14], [18, 5, 1-13], [19, 5, 1-12], [20, 5, 1-11]
+    // => 94 / 400 Value 4 (376 / 400)
+    // Critical Failure: 1 / 400 Value -20 (-20 / 400)
+    // Failure: 44 / 400 Value 0
+
+    let engine = engine(
+        r#"
+        let
+          square = (x: int) -> x * x
+        in
+            if is_critical_success then 50
+            else if is_success then square(quality_level + 1)
+            else if is_critical_failure then -20
+            else 0
+    "#,
+    );
+
+    let evaluated = engine
+        .evaluate_partial(PartialSkillCheckState {
+            attributes: [Attribute::new(10), Attribute::new(10), Attribute::new(10)],
+            skill_value: SkillPoints::new(11),
+            fixed_rolls: [None, Some(roll(5)), None],
+            ..default()
+        })
+        .unwrap();
+
+    let expected_probs = SkillCheckOutcomeProbabilities::from([
+        outcome_prob_no_mod(CriticalFailure, 1.0 / 400.0),
+        outcome_prob_no_mod(Failure, 44.0 / 400.0),
+        outcome_prob_no_mod(CriticalSuccess(QL_4), 1.0 / 400.0),
+        outcome_prob_no_mod(Success(QL_4), 119.0 / 400.0),
+        outcome_prob_no_mod(Success(QL_3), 66.0 / 400.0),
+        outcome_prob_no_mod(Success(QL_2), 75.0 / 400.0),
+        outcome_prob_no_mod(Success(QL_1), 94.0 / 400.0),
+    ]);
+    assert_that!(evaluated.evaluated).is_close_to(expected_probs, EPS);
+    assert_that!(evaluated.evaluation).is_close_to(eval(5112.0 / 400.0), EPS);
+}
+
+#[test]
+fn with_given_rolls_constituting_critical_failure() {
+    let engine = engine("quality_level");
+
+    let evaluated = engine
+        .evaluate_partial(PartialSkillCheckState {
+            fixed_rolls: [Some(roll(20)), Some(roll(20)), None],
+            ..default()
+        })
+        .unwrap();
+
+    let expected_probs = SkillCheckOutcomeProbabilities::from([
+        outcome_prob_no_mod(CriticalFailure, 19.0 / 20.0),
+        outcome_prob_no_mod(SpectacularFailure, 1.0 / 20.0),
+    ]);
+    assert_that!(evaluated.evaluated).is_close_to(expected_probs, EPS);
+}
+
+#[test]
+fn with_given_rolls_constituting_critical_success() {
+    let engine = engine("quality_level");
+
+    let evaluated = engine
+        .evaluate_partial(PartialSkillCheckState {
+            fixed_rolls: [None, Some(roll(1)), Some(roll(1))],
+            skill_value: SkillPoints::new(3),
+            ..default()
+        })
+        .unwrap();
+
+    let expected_probs = SkillCheckOutcomeProbabilities::from([
+        outcome_prob_no_mod(CriticalSuccess(QL_1), 19.0 / 20.0),
+        outcome_prob_no_mod(SpectacularSuccess(QL_1), 1.0 / 20.0),
+    ]);
+    assert_that!(evaluated.evaluated).is_close_to(expected_probs, EPS);
+}
+
+#[test]
 fn evaluation_error() {
     // Fails at QL 4
     let engine = engine("100 / (4 - quality_level)");
     let state = PartialSkillCheckState {
         attributes: [Attribute::new(10), Attribute::new(10), Attribute::new(10)],
-        roll_caps: [None, None, None],
-        fixed_rolls: [None, None, None],
         skill_value: SkillPoints::new(18),
-        extra_quality_levels_on_success: None,
-        extra_skill_points_on_success: SkillPoints::new(0),
-        modifiers: ModifierState::default(),
-        inaptitude: false,
+        ..default()
     };
 
     let result = engine.evaluate_partial(state);
@@ -295,10 +380,7 @@ fn evaluation_error_with_cap() {
             Some(Roll::new(10).unwrap()),
         ],
         skill_value: SkillPoints::new(10),
-        extra_quality_levels_on_success: None,
-        extra_skill_points_on_success: SkillPoints::new(0),
-        modifiers: ModifierState::default(),
-        inaptitude: false,
+        ..default()
     };
 
     let result = engine.evaluate_partial(state);
