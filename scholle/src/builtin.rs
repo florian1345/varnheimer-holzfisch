@@ -114,7 +114,7 @@ impl Arguments {
             i
         }
         else {
-            panic!("builtin-argument {:?} is not an integer", value);
+            panic!("builtin-argument {value:?} is not an integer");
         }
     }
 
@@ -125,7 +125,7 @@ impl Arguments {
             f
         }
         else {
-            panic!("builtin-argument {:?} is not a float", value);
+            panic!("builtin-argument {value:?} is not a float");
         }
     }
 }

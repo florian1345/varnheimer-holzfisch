@@ -135,10 +135,7 @@ fn evaluate_arithmetic(
             .map(Value::Integer),
         (Value::Float(lhs), Value::Float(rhs)) => Ok(Value::Float(float_op(lhs, rhs))),
         (lhs, rhs) => {
-            panic!(
-                "operands {:?} and {:?} have invalid types for arithmetic operation",
-                lhs, rhs
-            )
+            panic!("operands {lhs:?} and {rhs:?} have invalid types for arithmetic operation")
         },
     }
 }
@@ -153,10 +150,7 @@ fn evaluate_comparison(
         (Value::Integer(lhs), Value::Integer(rhs)) => Value::Bool(int_op(&lhs, &rhs)),
         (Value::Float(lhs), Value::Float(rhs)) => Value::Bool(float_op(&lhs, &rhs)),
         (lhs, rhs) => {
-            panic!(
-                "operands {:?} and {:?} have invalid types for comparison operation",
-                lhs, rhs
-            )
+            panic!("operands {lhs:?} and {rhs:?} have invalid types for comparison operation")
         },
     }
 }
@@ -173,10 +167,7 @@ fn evaluate_equality(
         (Value::Float(lhs), Value::Float(rhs)) => Value::Bool(float_op(&lhs, &rhs)),
         (Value::Bool(lhs), Value::Bool(rhs)) => Value::Bool(bool_op(&lhs, &rhs)),
         (lhs, rhs) => {
-            panic!(
-                "operands {:?} and {:?} have invalid types for equality operation",
-                lhs, rhs
-            )
+            panic!("operands {lhs:?} and {rhs:?} have invalid types for equality operation")
         },
     }
 }
@@ -186,10 +177,7 @@ fn evaluate_boolean(lhs: Value, rhs: Value, op: impl FnOnce(bool, bool) -> bool)
         Value::Bool(op(lhs, rhs))
     }
     else {
-        panic!(
-            "operands {:?} and {:?} have invalid types for boolean operation",
-            lhs, rhs
-        )
+        panic!("operands {lhs:?} and {rhs:?} have invalid types for boolean operation")
     }
 }
 
@@ -212,10 +200,7 @@ fn evaluate_ctx(expression: &Expression, ctx: &mut EvaluationContext) -> Runtime
                 },
                 (Value::Float(value), UnaryOperator::Negative) => Value::Float(-value),
                 operand => {
-                    panic!(
-                        "value {:?} cannot be applied to unary operator {:?}",
-                        operand, operator
-                    )
+                    panic!("value {operand:?} cannot be applied to unary operator {operator:?}")
                 },
             }
         },
@@ -307,7 +292,7 @@ fn evaluate_ctx(expression: &Expression, ctx: &mut EvaluationContext) -> Runtime
                     result
                 },
                 Value::BuiltinFunction(builtin_function) => builtin_function(arguments),
-                callee => panic!("value {:?} is not a callable function", callee),
+                callee => panic!("value {callee:?} is not a callable function"),
             }
         },
         ExpressionKind::If {

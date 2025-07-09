@@ -50,7 +50,7 @@ impl Debug for NodeRef<'_> {
 fn expect_text(value: &AttributeValue) -> &str {
     let AttributeValue::Text(value) = value
     else {
-        panic!("expected text attribute, but found {:?}", value)
+        panic!("expected text attribute, but found {value:?}")
     };
 
     value.as_str()
@@ -59,9 +59,9 @@ fn expect_text(value: &AttributeValue) -> &str {
 fn write_attribute_value(html: &mut String, value: &AttributeValue) -> fmt::Result {
     match value {
         AttributeValue::Text(text) => write!(html, "\"{}\"", text.escape_debug()),
-        AttributeValue::Float(f) => write!(html, "\"{}\"", f),
-        AttributeValue::Int(i) => write!(html, "\"{}\"", i),
-        AttributeValue::Bool(b) => write!(html, "\"{}\"", b),
+        AttributeValue::Float(f) => write!(html, "\"{f}\""),
+        AttributeValue::Int(i) => write!(html, "\"{i}\""),
+        AttributeValue::Bool(b) => write!(html, "\"{b}\""),
         AttributeValue::Listener(_) => write!(html, "[listener]"),
         AttributeValue::Any(_) => write!(html, "[any]"),
         AttributeValue::None => panic!("found none attribute value while generating HTML"),

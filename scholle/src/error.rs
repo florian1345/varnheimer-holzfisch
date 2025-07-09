@@ -51,7 +51,7 @@ pub enum ExpectedType {
 impl Display for ExpectedType {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            ExpectedType::Type(typ) => write!(f, "{}", typ),
+            ExpectedType::Type(typ) => write!(f, "{typ}"),
             ExpectedType::AnyFunction => write!(f, "<function>"),
         }
     }
@@ -70,7 +70,7 @@ pub enum ContextError {
 
     #[error("type error @ {span}: received {actual_type}, expected [ {expected_type_list} ]",
         expected_type_list = .expected_types.iter()
-            .map(|expected_type| format!("{}", expected_type))
+            .map(ToString::to_string)
             .collect::<Vec<_>>()
             .join(", ")
     )]

@@ -41,7 +41,7 @@ impl<'enumeration, T: Display> Display for EnumerationDisplay<'enumeration, T> {
                 "{}, {} {}",
                 self.enumeration[0..(len - 1)]
                     .iter()
-                    .map(|number| format!("{}", number))
+                    .map(ToString::to_string)
                     .collect::<Vec<_>>()
                     .join(", "),
                 self.conjunction,

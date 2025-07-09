@@ -173,18 +173,18 @@ fn format_error(error: &ScholleError) -> String {
     match error {
         ScholleError::Lexer(LexerError { kind, .. }) => match kind {
             LexerErrorKind::IntegerOverflow(value) => format!(
-                "Integer literal exceeds maximum value: {}\nInteger literals must be at most {}",
-                value,
+                "Integer literal exceeds maximum value: {value}\n\
+                    Integer literals must be at most {}",
                 i64::MAX
             ),
-            LexerErrorKind::InvalidCharacter(c) => format!("Invalid character: '{}'", c),
+            LexerErrorKind::InvalidCharacter(c) => format!("Invalid character: '{c}'"),
         },
         ScholleError::Parse(ParseError::UnexpectedToken(token)) => {
             format!("Unexpected token: '{}'", token.kind)
         },
         ScholleError::Context(context_error) => match context_error {
             ContextError::UnresolvedReference { identifier, .. } => {
-                format!("Unresolved reference: '{}'", identifier)
+                format!("Unresolved reference: '{identifier}'")
             },
             ContextError::TypeError {
                 actual_type,
@@ -205,8 +205,8 @@ fn format_error(error: &ScholleError) -> String {
                 };
 
                 format!(
-                    "Type error: expected {}, but found {}{}",
-                    expected_types_display, actual_type, addition
+                    "Type error: expected {expected_types_display}, \
+                        but found {actual_type}{addition}"
                 )
             },
             ContextError::CardinalityError {
@@ -214,8 +214,8 @@ fn format_error(error: &ScholleError) -> String {
                 argument_count,
                 ..
             } => format!(
-                "Incorrect number of arguments: expected {}, but found {}",
-                parameter_count, argument_count
+                "Incorrect number of arguments: expected {parameter_count}, \
+                    but found {argument_count}",
             ),
         },
         ScholleError::Runtime(RuntimeError { kind, .. }) => match kind {
@@ -235,9 +235,8 @@ fn format_error(error: &ScholleError) -> String {
                 };
 
                 format!(
-                    "Invalid result: {}\nThis likely indicates an invalid arithmetic operation \
-                    somewhere in your code, such as a division by zero.",
-                    result
+                    "Invalid result: {result}\nThis likely indicates an invalid arithmetic \
+                        operation somewhere in your code, such as a division by zero."
                 )
             },
         },
