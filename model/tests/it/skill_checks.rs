@@ -1,17 +1,13 @@
 use kernal::prelude::*;
+use model::check::modifier::Modifier::ExtraQualityLevelOnSuccess;
 use model::check::modifier::{Aptitude, Modifier, ModifierAction, ModifierState, Reroll};
 use model::check::outcome::SkillCheckOutcomeProbabilities;
 use model::check::{SkillCheckAction, SkillCheckState};
 use model::evaluation::Evaluation;
-use model::roll::Roll;
 use model::skill::{Attribute, SkillPoints};
 use rstest::rstest;
 
 use crate::*;
-
-fn roll(roll: u8) -> Roll {
-    Roll::new(roll).unwrap()
-}
 
 fn default() -> SkillCheckState {
     SkillCheckState {
@@ -180,6 +176,10 @@ fn given_aptitude_and_fate_point_prefers_aptitude_when_appropriate() {
     let engine = engine("quality_level");
 
     let evaluated = engine.evaluate_all_actions(skill_check_state).unwrap();
+
+    // Accept + 7 Rerolls by fate + 3 Rerolls by Aptitude
+    assert_that!(&evaluated).has_length(11);
+
     let best_move = evaluated[0].clone();
 
     assert_that!(best_move.0).is_equal_to(SkillCheckAction::ConsumeModifier {
@@ -188,10 +188,10 @@ fn given_aptitude_and_fate_point_prefers_aptitude_when_appropriate() {
     });
     assert_that!(best_move.1.evaluated).is_close_to(
         SkillCheckOutcomeProbabilities::from([
-            outcome_prob(SkillCheckOutcomeKind::Success(QL_3), 0.55),
-            outcome_prob(SkillCheckOutcomeKind::Success(QL_2), 0.3375),
-            outcome_prob(SkillCheckOutcomeKind::Success(QL_1), 0.05),
-            outcome_prob(SkillCheckOutcomeKind::Failure, 0.0625),
+            outcome_prob_no_mod(SkillCheckOutcomeKind::Success(QL_3), 0.55),
+            outcome_prob_no_mod(SkillCheckOutcomeKind::Success(QL_2), 0.3375),
+            outcome_prob_no_mod(SkillCheckOutcomeKind::Success(QL_1), 0.05),
+            outcome_prob_no_mod(SkillCheckOutcomeKind::Failure, 0.0625),
         ]),
         EPS,
     );
@@ -238,4 +238,162 @@ fn given_aptitude_and_fate_point_prefers_fate_point_when_appropriate() {
     // No assertion of exact probabilities: since the value of aptitude is not specified, it may or
     // may not be used after the fate point succeeds anyway.
     assert_that!(best_move.1.evaluation).is_close_to(eval(76_413.0 / 160_000.0), EPS);
+}
+
+#[test]
+fn given_costly_extra_skill_points_on_success_prefers_rerolling_first() {
+    // In this scenario, rerolling dice 1 and 3 is optimal to get max QL.
+    // To avoid potentially wasting the extra skill points on success on a critical failure, we
+    // have to reroll first.
+    // Critical Success (QL 6), extra skill points on success remain: 1 / 400 Value 6.5 (6.5 / 400)
+    // Success (QL 6), extra skill points on success remain:
+    //   [1-14, 2, 1-14] - Critical Success (QL 6)
+    // => 195 / 400 Value 6.5 (1267.5 / 400)
+    // Success (QL 6), extra skill points on success consumed:
+    //   [1-14, 2, 15-16], [15, 2, 1-15], [16, 2, 1-14]
+    // => 57 / 400 Value 6 (342 / 400)
+    // Success (QL 5), extra skill points on success remain:
+    //   [1-14, 2, 17], [15, 2, 16], [16, 2, 15], [17, 2, 1-14]
+    // => 30 / 400 Value 5.5 (165 / 400)
+    // Success (QL 5), extra skill points on success consumed:
+    //   [1-14, 2, 18-19], [15, 2, 17-18], [16, 2, 16-17], [17, 2, 15-16], [18, 2, 1-15],
+    //   [19, 2, 1-14]
+    // => 63 / 400 Value 5 (315 / 400)
+    // Success (QL 4), extra skill points on success remain:
+    //   [1-14, 2, 20], [15, 2, 19], [16, 2, 18], [17, 2, 17], [18, 2, 16], [19, 2, 15],
+    //   [20, 2, 1-14]
+    // => 33 / 400 Value 4.5 (148.5 / 400)
+    // Success (QL 4), extra skill points on success consumed:
+    //   [15, 2, 20], [16, 2, 19-20], [17, 2, 18-19], [18, 2, 17-18], [19, 2, 16-17], [20, 2, 15-16]
+    // => 11 / 400 Value 4 (44 / 400)
+    // Success (QL 3), extra skill points on success remain:
+    //   [17, 2, 20], [18, 2, 19], [19, 2, 18], [20, 2, 17]
+    // => 4 / 400 Value 3.5 (14 / 400)
+    // Success (QL 3), extra skill points on success consumed:
+    //   [18, 2, 20], [19, 2, 19-20], [20, 2, 18-19]
+    // => 5 / 400 Value 3 (15 / 400)
+    // Critical Failure, extra skill points on success remain: 1 / 400 Value 0.5 (0.5 / 400)
+
+    let extra_sp_on_success = Modifier::ExtraSkillPointsOnSuccess(SkillPoints::new(2));
+    let skill_check_state = SkillCheckState {
+        attributes: [Attribute::new(14), Attribute::new(14), Attribute::new(14)],
+        rolls: [roll(18), roll(2), roll(18)],
+        skill_value: SkillPoints::new(16),
+        modifiers: ModifierState::from_modifiers([Modifier::FatePoint, extra_sp_on_success]),
+        ..default()
+    };
+
+    let engine = engine(
+        "as_float(quality_level) + as_float(remaining_extra_skill_points_on_success(2)) / 2.0",
+    );
+
+    let evaluated = engine.evaluate_all_actions(skill_check_state).unwrap();
+    let best_move = evaluated[0].clone();
+
+    assert_that!(best_move.0).is_equal_to(SkillCheckAction::ConsumeModifier {
+        modifier: Modifier::FatePoint,
+        action: ModifierAction::RerollByFate(Reroll::new([true, false, true]).unwrap()),
+    });
+    assert_that!(best_move.1.evaluated).is_close_to(
+        SkillCheckOutcomeProbabilities::from([
+            outcome_prob(
+                SkillCheckOutcomeKind::CriticalSuccess(QL_6).with_modifiers([extra_sp_on_success]),
+                1.0 / 400.0,
+            ),
+            outcome_prob(
+                SkillCheckOutcomeKind::Success(QL_6).with_modifiers([extra_sp_on_success]),
+                195.0 / 400.0,
+            ),
+            outcome_prob(
+                SkillCheckOutcomeKind::Success(QL_6).without_modifiers(),
+                57.0 / 400.0,
+            ),
+            outcome_prob(
+                SkillCheckOutcomeKind::Success(QL_5).with_modifiers([extra_sp_on_success]),
+                30.0 / 400.0,
+            ),
+            outcome_prob(
+                SkillCheckOutcomeKind::Success(QL_5).without_modifiers(),
+                63.0 / 400.0,
+            ),
+            outcome_prob(
+                SkillCheckOutcomeKind::Success(QL_4).with_modifiers([extra_sp_on_success]),
+                33.0 / 400.0,
+            ),
+            outcome_prob(
+                SkillCheckOutcomeKind::Success(QL_4).without_modifiers(),
+                11.0 / 400.0,
+            ),
+            outcome_prob(
+                SkillCheckOutcomeKind::Success(QL_3).with_modifiers([extra_sp_on_success]),
+                4.0 / 400.0,
+            ),
+            outcome_prob(
+                SkillCheckOutcomeKind::Success(QL_3).without_modifiers(),
+                5.0 / 400.0,
+            ),
+            outcome_prob(
+                SkillCheckOutcomeKind::CriticalFailure.with_modifiers([extra_sp_on_success]),
+                1.0 / 400.0,
+            ),
+        ]),
+        EPS,
+    );
+    assert_that!(best_move.1.evaluation).is_close_to(eval(2318.0 / 400.0), EPS);
+}
+
+#[test]
+fn given_costly_extra_quality_level_on_success_prefers_rerolling_first() {
+    // Similar to the previous scenario, this time with an extra quality level on success.
+    // This makes evaluation a bit simpler, since the extra quality level on success is always used
+    // if we succeed and always remains if we do not.
+    // Critical Success (QL 4): 1 / 400 Value 4 (4 / 400)
+    // Success (QL 4): [1-16, 15, 1-15] - Critical Success (QL 4)
+    // => 239 / 400 Value 4 (956 / 400)
+    // Success (QL 3): [1-16, 15, 16-18], [17, 15, 1-17], [18, 15, 1-16], [19, 15, 1-15]
+    // => 96 / 400 Value 3 (288 / 400)
+    // Success (QL 2):
+    //   [1-16, 15, 19-20], [17, 15, 18-20], [18, 15, 17-20], [19, 15, 16-19], [20, 15, 1-18]
+    // => 61 / 400 Value 2 (122 / 400)
+    // Failure: [19, 15, 20], [20, 15, 19]
+    // => 2 / 400 Value 0.5 (1 / 400)
+    // Critical Failure: 1 / 400 Value 0.5 (0.5 / 400)
+
+    let skill_check_state = SkillCheckState {
+        attributes: [Attribute::new(16), Attribute::new(15), Attribute::new(15)],
+        rolls: [roll(19), roll(15), roll(19)],
+        skill_value: SkillPoints::new(7),
+        modifiers: ModifierState::from_modifiers([Modifier::FatePoint, ExtraQualityLevelOnSuccess]),
+        ..default()
+    };
+
+    let engine = engine(
+        "as_float(quality_level) + as_float(remaining_extra_quality_levels_on_success) / 2.0",
+    );
+
+    let evaluated = engine.evaluate_all_actions(skill_check_state).unwrap();
+    let best_move = evaluated[0].clone();
+
+    assert_that!(best_move.0).is_equal_to(SkillCheckAction::ConsumeModifier {
+        modifier: Modifier::FatePoint,
+        action: ModifierAction::RerollByFate(Reroll::new([true, false, true]).unwrap()),
+    });
+    assert_that!(best_move.1.evaluated).is_close_to(
+        SkillCheckOutcomeProbabilities::from([
+            outcome_prob_no_mod(SkillCheckOutcomeKind::CriticalSuccess(QL_4), 1.0 / 400.0),
+            outcome_prob_no_mod(SkillCheckOutcomeKind::Success(QL_4), 239.0 / 400.0),
+            outcome_prob_no_mod(SkillCheckOutcomeKind::Success(QL_3), 96.0 / 400.0),
+            outcome_prob_no_mod(SkillCheckOutcomeKind::Success(QL_2), 61.0 / 400.0),
+            outcome_prob(
+                SkillCheckOutcomeKind::Failure.with_modifiers([ExtraQualityLevelOnSuccess]),
+                2.0 / 400.0,
+            ),
+            outcome_prob(
+                SkillCheckOutcomeKind::CriticalFailure.with_modifiers([ExtraQualityLevelOnSuccess]),
+                1.0 / 400.0,
+            ),
+        ]),
+        EPS,
+    );
+    assert_that!(best_move.1.evaluation).is_close_to(eval(1371.5 / 400.0), EPS);
 }
