@@ -1,7 +1,7 @@
 use SkillCheckOutcomeKind::{CriticalFailure, Failure, SpectacularFailure};
 use kernal::prelude::*;
 use model::check::PartialSkillCheckState;
-use model::check::modifier::ModifierState;
+use model::check::modifier::{Modifier, ModifierState};
 use model::check::outcome::SkillCheckOutcomeKind::{CriticalSuccess, SpectacularSuccess, Success};
 use model::check::outcome::{SkillCheckOutcomeKind, SkillCheckOutcomeProbabilities};
 use model::roll::Roll;
@@ -348,6 +348,70 @@ fn with_given_rolls_constituting_critical_success() {
         outcome_prob_no_mod(SpectacularSuccess(QL_1), 1.0 / 20.0),
     ]);
     assert_that!(evaluated.evaluated).is_close_to(expected_probs, EPS);
+}
+
+#[test]
+fn with_extra_skill_points_modifier() {
+    // Attributes 12, 12, 13 Skill value 3
+    // Spectacular Success (QL 1) with remaining extra skill points: 1 / 8000 Value 1.5 (1.5 / 8000)
+    // Critical Success (QL 1) with remaining extra skill points: 57 / 8000 Value 1.5 (85.5 / 8000)
+    // Success (QL 1) with remaining extra skill points:
+    //   ([1-12, 1-12, 1-16], [1-12, 13, 1-15], [1-12, 14, 1-14], [1-12, 15, 1-13],
+    //     [13, 1-12, 1-15], [13, 13, 1-14], [13, 14, 1-13],
+    //     [14, 1-12, 1-14], [14, 13, 1-13], [15, 1-12, 1-13]) -
+    //   ([1, 1, 1-16], [1, 2-15, 1], [2-15, 1, 1])
+    // => 3308 / 8000 Value 1.5 (4962 / 8000)
+    // Success (QL 1) without remaining extra skill points:
+    //   ([1-12, 1-12, 17], [1-12, 13, 16], [1-12, 14, 15], [1-12, 15, 14], [1-12, 16, 1-13],
+    //     [13, 1-12, 16], [13, 13, 15], [13, 14, 14], [13, 15, 1-13],
+    //     [14, 1-12, 15], [14, 13, 14], [14, 14, 1-13],
+    //     [15, 1-12, 14], [15, 13, 1-13], [16, 1-12, 1-13]) -
+    //   ([1, 1, 17], [1, 16, 1], [16, 1, 1])
+    // => 567 / 8000 Value 1 (567 / 8000)
+    // Spectacular Failure with remaining extra skill points: 1 / 8000 Value 0.5 (0.5 / 8000)
+    // Critical Failure with remaining extra skill points: 57 / 8000 Value 0.5 (28.5 / 8000)
+    // Failure with remaining extra skill points: 4009 / 8000 Value 0.5 (2004.5 / 8000)
+
+    let engine = engine(
+        "(if is_success then 1.0 else 0.0) + as_float(remaining_extra_skill_points(1)) * 0.5",
+    );
+
+    let extra_skill_point = Modifier::ExtraSkillPoints(SkillPoints::new(1));
+    let evaluated = engine
+        .evaluate_partial(PartialSkillCheckState {
+            attributes: [Attribute::new(12), Attribute::new(12), Attribute::new(13)],
+            skill_value: SkillPoints::new(3),
+            modifiers: ModifierState::from_modifiers([extra_skill_point]),
+            ..default()
+        })
+        .unwrap();
+
+    let expected_probs = SkillCheckOutcomeProbabilities::from([
+        outcome_prob(
+            SpectacularSuccess(QL_1).with_modifiers([extra_skill_point]),
+            1.0 / 8000.0,
+        ),
+        outcome_prob(
+            CriticalSuccess(QL_1).with_modifiers([extra_skill_point]),
+            57.0 / 8000.0,
+        ),
+        outcome_prob(
+            Success(QL_1).with_modifiers([extra_skill_point]),
+            3308.0 / 8000.0,
+        ),
+        outcome_prob_no_mod(Success(QL_1), 567.0 / 8000.0),
+        outcome_prob(Failure.with_modifiers([extra_skill_point]), 4009.0 / 8000.0),
+        outcome_prob(
+            CriticalFailure.with_modifiers([extra_skill_point]),
+            57.0 / 8000.0,
+        ),
+        outcome_prob(
+            SpectacularFailure.with_modifiers([extra_skill_point]),
+            1.0 / 8000.0,
+        ),
+    ]);
+    assert_that!(evaluated.evaluated).is_close_to(expected_probs, EPS);
+    assert_that!(evaluated.evaluation).is_close_to(eval(7649.5 / 8000.0), EPS);
 }
 
 #[test]
