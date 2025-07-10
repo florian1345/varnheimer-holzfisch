@@ -27,7 +27,7 @@ fn outcome_probability(
         .outcomes()
         .filter(|(outcome, _)| outcome.quality_level() == quality_level)
         .map(|(_, probability)| probability)
-        .for_each(|p| probability += p);
+        .for_each(|p| probability = probability.saturating_add(p));
 
     probability
 }

@@ -8,6 +8,7 @@ use dioxus_test_utils::event::{
 use dioxus_test_utils::{Find, NodeRef, NodeRefAssertions, TestDom};
 use frontend::App;
 use kernal::prelude::*;
+use rstest::rstest;
 
 fn find_number_input(dom: &TestDom, index: usize) -> NodeRef<'_> {
     dom.find_all(".skill-check-state-form .number-input > input")[index]
@@ -188,4 +189,39 @@ fn with_runtime_error() {
 
     assert_that!(&dom.try_find("table")).is_none();
     assert_that!(dom.find(".error")).contains_only_text("Division by zero");
+}
+
+#[rstest]
+#[case::definitive_critical_success([10, 10, 10], 0, [1, 1, 0], 2, "QL 1")]
+#[case::definitive_critical_failure([10, 10, 10], 0, [20, 0, 20], 1, "Failure")]
+#[case::definitive_success_ql_1([17, 16, 16], 3, [0, 3, 5], 2, "QL 1")]
+#[case::definitive_success_ql_6([13, 14, 15], 21, [5, 13, 0], 7, "QL 6")]
+#[case::definitive_failure([10, 10, 10], 10, [19, 0, 12], 1, "Failure")]
+fn with_partial_roll_with_definitive_probabilities(
+    #[case] attributes: [i32; 3],
+    #[case] skill_points: i32,
+    #[case] rolls: [i32; 3],
+    #[case] row_index: usize,
+    #[case] row_label: &str,
+) {
+    // Ensures that adding probabilities that should sum to 1 does not cause any strange bugs due to
+    // float imprecision. To avoid false positives due to concurrency or similar, we repeat tests.
+
+    for _ in 0..20 {
+        let mut dom = TestDom::new(App);
+
+        enter_number(&mut dom, 0, &attributes[0].to_string());
+        enter_number(&mut dom, 1, &attributes[1].to_string());
+        enter_number(&mut dom, 2, &attributes[2].to_string());
+        enter_number(&mut dom, 3, &skill_points.to_string());
+        enter_number(&mut dom, 4, &rolls[0].to_string());
+        enter_number(&mut dom, 5, &rolls[1].to_string());
+        enter_number(&mut dom, 6, &rolls[2].to_string());
+        enter_scholle(&mut dom, "quality_level");
+        evaluate(&mut dom);
+
+        let table_rows = dom.find_all(".center-box tr");
+
+        assert_table_row(table_rows[row_index], [row_label, "100.00"]);
+    }
 }
