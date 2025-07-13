@@ -373,36 +373,9 @@ fn build_states_prob_with<R>(
                 continue;
             }
 
-            if state.inaptitude && state.fixed_rolls.iter().all(Option::is_some) {
-                let mut child_state = state.clone();
-                child_state.apply_inaptitude();
-                next_states.add(child_state, probability);
-                continue;
-            }
-
-            let first_unrolled_idx = state.fixed_rolls.iter().position(Option::is_none).unwrap();
-
-            let rolls_to_analyze = if let Some(cap) = state.roll_caps[first_unrolled_idx] {
-                // evaluate rolling >= the cap first, then the rest in the loop below
-                let roll_probability = cap_probability(cap);
-                let mut child_state = state.clone();
-                child_state.fixed_rolls[first_unrolled_idx] = Some(cap);
-                child_state.roll_caps[first_unrolled_idx] = None;
-                next_states.add(child_state, probability * roll_probability);
-
-                Roll::ALL.split(|&roll| roll == cap).next().unwrap()
-            }
-            else {
-                // no cap given, all options are equally likely
-                &Roll::ALL
-            };
-
-            for &roll in rolls_to_analyze {
-                let mut child_state = state.clone();
-                child_state.fixed_rolls[first_unrolled_idx] = Some(roll);
-                child_state.roll_caps[first_unrolled_idx] = None;
-                next_states.add(child_state, probability * DIE_RESULT_PROBABILITY);
-            }
+            with_partial_state_children(state, |child_state, child_probability| {
+                next_states.add(child_state, child_probability * probability);
+            });
         }
 
         mem::swap(&mut current_states, &mut next_states);
@@ -420,35 +393,9 @@ fn build_states_many(
         let (next_states, current_states) = states.borrow_consecutive(lower_index);
 
         for state in current_states.iter() {
-            if state.inaptitude && state.fixed_rolls.iter().all(Option::is_some) {
-                let mut child_state = state.clone();
-                child_state.apply_inaptitude();
+            with_partial_state_children(state, |child_state, _| {
                 next_states.insert(child_state);
-                continue;
-            }
-
-            let first_unrolled_idx = state.fixed_rolls.iter().position(Option::is_none).unwrap();
-
-            let rolls_to_analyze = if let Some(cap) = state.roll_caps[first_unrolled_idx] {
-                // evaluate rolling >= the cap first, then the rest in the loop below
-                let mut child_state = state.clone();
-                child_state.fixed_rolls[first_unrolled_idx] = Some(cap);
-                child_state.roll_caps[first_unrolled_idx] = None;
-                next_states.insert(child_state);
-
-                Roll::ALL.split(|&roll| roll == cap).next().unwrap()
-            }
-            else {
-                // no cap given, all options are equally likely
-                &Roll::ALL
-            };
-
-            for &roll in rolls_to_analyze {
-                let mut child_state = state.clone();
-                child_state.fixed_rolls[first_unrolled_idx] = Some(roll);
-                child_state.roll_caps[first_unrolled_idx] = None;
-                next_states.insert(child_state);
-            }
+            });
         }
     }
 
@@ -459,4 +406,40 @@ fn build_states_many(
         .unwrap_or_default()
         .into_iter()
         .map(|state| state.as_skill_check_state().unwrap())
+}
+
+fn with_partial_state_children(
+    state: &PartialSkillCheckState,
+    mut consumer: impl FnMut(PartialSkillCheckState, Probability),
+) {
+    if state.inaptitude && state.fixed_rolls.iter().all(Option::is_some) {
+        let mut child_state = state.clone();
+        child_state.apply_inaptitude();
+        consumer(child_state, Probability::ONE);
+        return;
+    }
+
+    let first_unrolled_idx = state.fixed_rolls.iter().position(Option::is_none).unwrap();
+
+    let rolls_to_analyze = if let Some(cap) = state.roll_caps[first_unrolled_idx] {
+        // evaluate rolling >= the cap first, then the rest in the loop below
+        let roll_probability = cap_probability(cap);
+        let mut child_state = state.clone();
+        child_state.fixed_rolls[first_unrolled_idx] = Some(cap);
+        child_state.roll_caps[first_unrolled_idx] = None;
+        consumer(child_state, roll_probability);
+
+        Roll::ALL.split(|&roll| roll == cap).next().unwrap()
+    }
+    else {
+        // no cap given, all options are equally likely
+        &Roll::ALL
+    };
+
+    for &roll in rolls_to_analyze {
+        let mut child_state = state.clone();
+        child_state.fixed_rolls[first_unrolled_idx] = Some(roll);
+        child_state.roll_caps[first_unrolled_idx] = None;
+        consumer(child_state, DIE_RESULT_PROBABILITY);
+    }
 }
