@@ -22,6 +22,8 @@ fn cap_probability(cap: Roll) -> Probability {
     DIE_RESULT_PROBABILITY.saturating_mul(rolls_at_least_cap)
 }
 
+// TODO reduce amount of cloning required
+
 #[derive(Clone)]
 pub struct VarnheimerHolzfischEngine<EvaluatorT> {
     pub evaluator: EvaluatorT,
@@ -36,9 +38,9 @@ where
         &self,
         state: PartialSkillCheckState,
     ) -> Result<Evaluated<SkillCheckOutcomeProbabilities>, EvaluatorT::Error> {
-        let unevaluated_graph = build_graph(state.clone());
+        let unevaluated_graph = build_graph_from_initial_state(state.clone());
         let evaluated_graph = self.eval_graph(&unevaluated_graph)?;
-        Ok(self.eval_partial(state, &evaluated_graph.states))
+        Ok(self.eval_partial_by_resolving_to_complete(state, &evaluated_graph.states))
     }
 
     pub fn evaluate_all_actions(
@@ -68,12 +70,12 @@ where
 
     fn eval_graph(&self, graph: &[UnevaluatedLayer]) -> Result<EvaluatedLayer, EvaluatorT::Error> {
         let mut current_layer = EvaluatedLayer {
-            preceding_partial_states: HashMap::new(),
+            preceding_partial_states: PartialStateMap::new(),
             states: HashMap::new(),
         };
 
         for layer in graph.iter().rev() {
-            let states = layer
+            let states: HashMap<SkillCheckState, EvaluatedAction> = layer
                 .states
                 .par_iter()
                 .map(|state| {
@@ -86,17 +88,47 @@ where
                 })
                 .collect::<Result<_, _>>()?;
 
-            let preceding_partial_states: HashMap<
-                PartialSkillCheckState,
-                Evaluated<SkillCheckOutcomeProbabilities>,
-            > = layer
+            let mut preceding_partial_states = PartialStateMap::new();
+            preceding_partial_states
+                .maps_by_remaining_steps
+                .push(HashMap::new());
+
+            if let Some(partial_layer_1) = layer
                 .preceding_partial_states
-                .par_iter()
-                .map(|partial_state| {
-                    let eval = self.eval_partial(partial_state.clone(), &states);
-                    (partial_state.clone(), eval)
-                })
-                .collect();
+                .sets_by_remaining_steps
+                .get(1)
+            {
+                let eval_layer = partial_layer_1
+                    .par_iter()
+                    .map(|partial_state| {
+                        let evaluated = self
+                            .eval_partial_by_resolving_to_complete(partial_state.clone(), &states);
+                        (partial_state.clone(), evaluated)
+                    })
+                    .collect::<HashMap<_, _>>();
+
+                preceding_partial_states
+                    .maps_by_remaining_steps
+                    .push(eval_layer);
+            }
+
+            for remaining_steps in 2..layer.preceding_partial_states.set_count() {
+                let partial_layer =
+                    &layer.preceding_partial_states.sets_by_remaining_steps[remaining_steps];
+                let eval_layer = partial_layer
+                    .par_iter()
+                    .map(|partial_state| {
+                        let evaluated = self.eval_partial_by_resolving_to_children(
+                            partial_state,
+                            &preceding_partial_states.maps_by_remaining_steps[remaining_steps - 1],
+                        );
+                        (partial_state.clone(), evaluated)
+                    })
+                    .collect::<HashMap<_, _>>();
+                preceding_partial_states
+                    .maps_by_remaining_steps
+                    .push(eval_layer);
+            }
 
             current_layer = EvaluatedLayer {
                 states,
@@ -128,9 +160,11 @@ where
                     SkillCheckActionResult::State(state) => {
                         next_layer.states[&state].evaluated.clone()
                     },
-                    SkillCheckActionResult::PartialState(state) => {
-                        next_layer.preceding_partial_states[&state].clone()
-                    },
+                    SkillCheckActionResult::PartialState(state) => next_layer
+                        .preceding_partial_states
+                        .get(&state)
+                        .unwrap()
+                        .clone(),
                 };
 
                 Ok(EvaluatedAction { action, evaluated })
@@ -141,7 +175,32 @@ where
         Ok(result)
     }
 
-    fn eval_partial(
+    fn eval_partial_by_resolving_to_children(
+        &self,
+        state: &PartialSkillCheckState,
+        next_layer_partial_evals: &HashMap<
+            PartialSkillCheckState,
+            Evaluated<SkillCheckOutcomeProbabilities>,
+        >,
+    ) -> Evaluated<SkillCheckOutcomeProbabilities> {
+        // TODO reduce duplication with other eval_partial
+        let mut evaluation = Evaluation::ZERO;
+        let mut probabilities = SkillCheckOutcomeProbabilities::default();
+
+        with_partial_state_children(state, |child_state, prob| {
+            let next_state_evaluated = &next_layer_partial_evals[&child_state];
+
+            evaluation += next_state_evaluated.evaluation * prob;
+            probabilities.saturating_fma_assign(&next_state_evaluated.evaluated, prob);
+        });
+
+        Evaluated {
+            evaluation,
+            evaluated: probabilities,
+        }
+    }
+
+    fn eval_partial_by_resolving_to_complete(
         &self,
         state: PartialSkillCheckState,
         next_layer_skill_check_state_evals: &HashMap<SkillCheckState, EvaluatedAction>,
@@ -175,9 +234,8 @@ fn steps_to_completeness(state: &PartialSkillCheckState) -> usize {
     remaining_rolls + remaining_steps_by_inaptitude
 }
 
+#[derive(Clone)]
 struct PartialStateSet {
-    // Set at index `i` contains all partial skill check states with `i + 1` remaining steps to
-    // become complete.
     sets_by_remaining_steps: Vec<HashSet<PartialSkillCheckState>>,
 }
 
@@ -219,38 +277,30 @@ impl PartialStateSet {
             self.insert(state);
         }
     }
+}
 
-    fn iter(&self) -> impl Iterator<Item = &PartialSkillCheckState> {
-        self.sets_by_remaining_steps.iter().flat_map(HashSet::iter)
+struct PartialStateMap<T> {
+    maps_by_remaining_steps: Vec<HashMap<PartialSkillCheckState, T>>,
+}
+
+impl<T: Sync> PartialStateMap<T> {
+    fn new() -> PartialStateMap<T> {
+        PartialStateMap {
+            maps_by_remaining_steps: Vec::new(),
+        }
     }
 
-    fn par_iter(&self) -> impl ParallelIterator<Item = &PartialSkillCheckState> {
-        self.sets_by_remaining_steps
-            .par_iter()
-            .flat_map(HashSet::par_iter)
+    fn get(&self, state: &PartialSkillCheckState) -> Option<&T> {
+        let index = steps_to_completeness(state);
+        self.maps_by_remaining_steps
+            .get(index)
+            .and_then(|map| map.get(state))
     }
 }
 
 struct UnevaluatedLayer {
     preceding_partial_states: PartialStateSet,
     states: HashSet<SkillCheckState>,
-}
-
-impl UnevaluatedLayer {
-    fn new() -> UnevaluatedLayer {
-        UnevaluatedLayer {
-            preceding_partial_states: PartialStateSet::new(),
-            states: HashSet::new(),
-        }
-    }
-
-    fn add_state(&mut self, state: SkillCheckState) {
-        self.states.insert(state);
-    }
-
-    fn add_preceding_partial_state(&mut self, state: PartialSkillCheckState) {
-        self.preceding_partial_states.insert(state);
-    }
 }
 
 #[derive(Clone)]
@@ -260,10 +310,7 @@ struct EvaluatedAction {
 }
 
 struct EvaluatedLayer {
-    // Map at index `i` contains all partial skill check states with `i + 1` remaining steps to
-    // become complete.
-    preceding_partial_states:
-        HashMap<PartialSkillCheckState, Evaluated<SkillCheckOutcomeProbabilities>>,
+    preceding_partial_states: PartialStateMap<Evaluated<SkillCheckOutcomeProbabilities>>,
     states: HashMap<SkillCheckState, EvaluatedAction>,
 }
 
@@ -293,15 +340,16 @@ impl<T: Eq + Hash> ProbabilityMap<T> {
 }
 
 fn build_graph_from_initial_state(state: PartialSkillCheckState) -> Vec<UnevaluatedLayer> {
-    let mut initial_layer = UnevaluatedLayer {
-        states: build_states(state.clone()),
-        preceding_partial_states: PartialStateSet::new(),
+    let preceding_partial_states = build_states_many_into_partial_set([state]);
+    let initial_layer = UnevaluatedLayer {
+        states: extract_complete_states(&preceding_partial_states).collect(),
+        preceding_partial_states,
     };
-    initial_layer.add_preceding_partial_state(state);
     let mut graph = vec![initial_layer];
 
     while !graph.last().unwrap().states.is_empty() {
-        let mut next_layer = UnevaluatedLayer::new();
+        let mut next_partial_states = HashSet::new();
+        let mut next_states = HashSet::new();
 
         for state in &graph.last().unwrap().states {
             let actions = state
@@ -312,10 +360,10 @@ fn build_graph_from_initial_state(state: PartialSkillCheckState) -> Vec<Unevalua
             for action in actions {
                 match action.apply(state.clone()) {
                     SkillCheckActionResult::State(state) => {
-                        next_layer.add_state(state);
+                        next_states.insert(state);
                     },
                     SkillCheckActionResult::PartialState(state) => {
-                        next_layer.add_preceding_partial_state(state);
+                        next_partial_states.insert(state);
                     },
                     SkillCheckActionResult::Done(_) => unreachable!(
                         "received done action result even though Accept was filtered out"
@@ -324,28 +372,21 @@ fn build_graph_from_initial_state(state: PartialSkillCheckState) -> Vec<Unevalua
             }
         }
 
-        build_states_many(next_layer.preceding_partial_states.iter().cloned()).for_each(|state| {
-            next_layer.states.insert(state);
-        });
+        let preceding_partial_states = build_states_many_into_partial_set(next_partial_states);
 
-        graph.push(next_layer)
+        next_states.extend(extract_complete_states(&preceding_partial_states));
+
+        graph.push(UnevaluatedLayer {
+            states: next_states,
+            preceding_partial_states,
+        })
     }
 
     graph.pop();
     graph
 }
 
-fn build_graph(state: PartialSkillCheckState) -> Vec<UnevaluatedLayer> {
-    build_graph_from_initial_state(state)
-}
-
 // TODO reduce duplication of all these build_states_*
-
-fn build_states(state: PartialSkillCheckState) -> HashSet<SkillCheckState> {
-    let mut result = HashSet::new();
-    build_states_prob_with(state, |state, _| result.insert(state));
-    result
-}
 
 fn build_states_prob(
     state: PartialSkillCheckState,
@@ -383,9 +424,23 @@ fn build_states_prob_with<R>(
     }
 }
 
-fn build_states_many(
-    root_states: impl IntoIterator<Item = PartialSkillCheckState>,
+fn extract_complete_states(
+    partial_state_set: &PartialStateSet,
 ) -> impl Iterator<Item = SkillCheckState> {
+    partial_state_set
+        .sets_by_remaining_steps
+        .iter()
+        .next()
+        .into_iter()
+        .flat_map(|set| {
+            set.iter()
+                .map(|state| state.as_skill_check_state().unwrap())
+        })
+}
+
+fn build_states_many_into_partial_set(
+    root_states: impl IntoIterator<Item = PartialSkillCheckState>,
+) -> PartialStateSet {
     let mut states = PartialStateSet::new();
     states.extend_with(root_states);
 
@@ -400,12 +455,6 @@ fn build_states_many(
     }
 
     states
-        .sets_by_remaining_steps
-        .into_iter()
-        .next()
-        .unwrap_or_default()
-        .into_iter()
-        .map(|state| state.as_skill_check_state().unwrap())
 }
 
 fn with_partial_state_children(

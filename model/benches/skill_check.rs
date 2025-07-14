@@ -49,7 +49,10 @@ fn run_benchmark_kind<T: Clone, R>(
 ) {
     for (state, name) in states {
         let mut g = c.benchmark_group(format!("{group_prefix} > {name}"));
-        let g = g.sample_size(10).measurement_time(Duration::from_secs(30));
+        let g = g
+            .sample_size(20)
+            .confidence_level(0.99)
+            .measurement_time(Duration::from_secs(10));
 
         for (evaluator, name) in evaluators() {
             let engine = VarnheimerHolzfischEngine { evaluator };
