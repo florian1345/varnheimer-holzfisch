@@ -80,7 +80,7 @@ impl Neg for Evaluation {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Evaluated<T> {
     pub evaluated: T,
     pub evaluation: Evaluation,

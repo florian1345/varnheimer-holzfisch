@@ -11,7 +11,7 @@ use crate::check::{
     SkillCheckActionResult,
     SkillCheckState,
 };
-use crate::evaluation::{Evaluated, Evaluation, SkillCheckEvaluator};
+use crate::evaluation::{Evaluated, SkillCheckEvaluator};
 use crate::probability::Probability;
 use crate::roll::{DICE_SIDES, Roll};
 
@@ -20,6 +20,15 @@ const DIE_RESULT_PROBABILITY: Probability = Probability::new(1.0f64 / DICE_SIDES
 fn cap_probability(cap: Roll) -> Probability {
     let rolls_at_least_cap = (Roll::MAX.as_u8() - cap.as_u8()) as usize + 1;
     DIE_RESULT_PROBABILITY.saturating_mul(rolls_at_least_cap)
+}
+
+fn fma_assign(
+    lhs: &mut Evaluated<SkillCheckOutcomeProbabilities>,
+    rhs: &Evaluated<SkillCheckOutcomeProbabilities>,
+    prob: Probability,
+) {
+    lhs.evaluation += rhs.evaluation * prob;
+    lhs.evaluated.saturating_fma_assign(&rhs.evaluated, prob);
 }
 
 // TODO reduce amount of cloning required
@@ -39,7 +48,7 @@ where
         state: PartialSkillCheckState,
     ) -> Result<Evaluated<SkillCheckOutcomeProbabilities>, EvaluatorT::Error> {
         let unevaluated_graph = build_graph_from_initial_state(state.clone());
-        let evaluated_graph = self.eval_graph(&unevaluated_graph)?;
+        let evaluated_graph = self.eval_graph(unevaluated_graph)?;
         Ok(self.eval_partial_by_resolving_to_complete(state, &evaluated_graph.states))
     }
 
@@ -58,7 +67,7 @@ where
             modifiers: skill_check.modifiers.clone(),
             inaptitude: false,
         });
-        let evaluated_graph = self.eval_graph(&unevaluated_graph[1..])?;
+        let evaluated_graph = self.eval_graph(unevaluated_graph.into_iter().skip(1))?;
 
         // TODO export EvaluatedAction instead of using tuples
         Ok(self
@@ -68,71 +77,78 @@ where
             .collect::<Vec<_>>())
     }
 
-    fn eval_graph(&self, graph: &[UnevaluatedLayer]) -> Result<EvaluatedLayer, EvaluatorT::Error> {
+    fn eval_graph(
+        &self,
+        graph: impl IntoIterator<IntoIter: DoubleEndedIterator<Item = UnevaluatedLayer>>,
+    ) -> Result<EvaluatedLayer, EvaluatorT::Error> {
         let mut current_layer = EvaluatedLayer {
             preceding_partial_states: PartialStateMap::new(),
             states: HashMap::new(),
         };
 
-        for layer in graph.iter().rev() {
-            let states: HashMap<SkillCheckState, EvaluatedAction> = layer
+        for layer in graph.into_iter().rev() {
+            let next_states: HashMap<SkillCheckState, EvaluatedAction> = layer
                 .states
-                .par_iter()
+                .into_par_iter()
                 .map(|state| {
                     let best_action = self
-                        .eval_state(state, &current_layer)?
+                        .eval_state(&state, &current_layer)?
                         .into_iter()
                         .next()
                         .unwrap();
-                    Ok((state.clone(), best_action))
+                    Ok((state, best_action))
                 })
                 .collect::<Result<_, _>>()?;
 
-            let mut preceding_partial_states = PartialStateMap::new();
-            preceding_partial_states
+            let mut next_preceding_partial_states = PartialStateMap::new();
+            next_preceding_partial_states
                 .maps_by_remaining_steps
                 .push(HashMap::new());
-
-            if let Some(partial_layer_1) = layer
+            let mut preceding_partial_states_iter = layer
                 .preceding_partial_states
                 .sets_by_remaining_steps
-                .get(1)
-            {
+                .into_iter()
+                .skip(1);
+
+            if let Some(partial_layer_1) = preceding_partial_states_iter.next() {
                 let eval_layer = partial_layer_1
-                    .par_iter()
+                    .into_par_iter()
                     .map(|partial_state| {
-                        let evaluated = self
-                            .eval_partial_by_resolving_to_complete(partial_state.clone(), &states);
-                        (partial_state.clone(), evaluated)
+                        let evaluated = self.eval_partial_by_resolving_to_complete(
+                            partial_state.clone(),
+                            &next_states,
+                        );
+                        (partial_state, evaluated)
                     })
                     .collect::<HashMap<_, _>>();
 
-                preceding_partial_states
+                next_preceding_partial_states
                     .maps_by_remaining_steps
                     .push(eval_layer);
             }
 
-            for remaining_steps in 2..layer.preceding_partial_states.set_count() {
-                let partial_layer =
-                    &layer.preceding_partial_states.sets_by_remaining_steps[remaining_steps];
+            for partial_layer in preceding_partial_states_iter {
                 let eval_layer = partial_layer
-                    .par_iter()
+                    .into_par_iter()
                     .map(|partial_state| {
                         let evaluated = self.eval_partial_by_resolving_to_children(
-                            partial_state,
-                            &preceding_partial_states.maps_by_remaining_steps[remaining_steps - 1],
+                            &partial_state,
+                            next_preceding_partial_states
+                                .maps_by_remaining_steps
+                                .last()
+                                .unwrap(),
                         );
-                        (partial_state.clone(), evaluated)
+                        (partial_state, evaluated)
                     })
                     .collect::<HashMap<_, _>>();
-                preceding_partial_states
+                next_preceding_partial_states
                     .maps_by_remaining_steps
                     .push(eval_layer);
             }
 
             current_layer = EvaluatedLayer {
-                states,
-                preceding_partial_states,
+                states: next_states,
+                preceding_partial_states: next_preceding_partial_states,
             };
         }
 
@@ -183,21 +199,13 @@ where
             Evaluated<SkillCheckOutcomeProbabilities>,
         >,
     ) -> Evaluated<SkillCheckOutcomeProbabilities> {
-        // TODO reduce duplication with other eval_partial
-        let mut evaluation = Evaluation::ZERO;
-        let mut probabilities = SkillCheckOutcomeProbabilities::default();
+        let mut result = Evaluated::default();
 
         with_partial_state_children(state, |child_state, prob| {
-            let next_state_evaluated = &next_layer_partial_evals[&child_state];
-
-            evaluation += next_state_evaluated.evaluation * prob;
-            probabilities.saturating_fma_assign(&next_state_evaluated.evaluated, prob);
+            fma_assign(&mut result, &next_layer_partial_evals[&child_state], prob);
         });
 
-        Evaluated {
-            evaluation,
-            evaluated: probabilities,
-        }
+        result
     }
 
     fn eval_partial_by_resolving_to_complete(
@@ -205,20 +213,17 @@ where
         state: PartialSkillCheckState,
         next_layer_skill_check_state_evals: &HashMap<SkillCheckState, EvaluatedAction>,
     ) -> Evaluated<SkillCheckOutcomeProbabilities> {
-        let mut evaluation = Evaluation::ZERO;
-        let mut probabilities = SkillCheckOutcomeProbabilities::default();
+        let mut result = Evaluated::default();
 
-        for (state, prob) in build_states_prob(state) {
-            let next_state_evaluated = &next_layer_skill_check_state_evals[&state].evaluated;
+        build_states_prob_with(state, |state, prob| {
+            fma_assign(
+                &mut result,
+                &next_layer_skill_check_state_evals[&state].evaluated,
+                prob,
+            );
+        });
 
-            evaluation += next_state_evaluated.evaluation * prob;
-            probabilities.saturating_fma_assign(&next_state_evaluated.evaluated, prob);
-        }
-
-        Evaluated {
-            evaluation,
-            evaluated: probabilities,
-        }
+        result
     }
 }
 
@@ -330,8 +335,8 @@ impl<T: Eq + Hash> ProbabilityMap<T> {
         self.0.iter().map(|(state, &prob)| (state, prob))
     }
 
-    fn into_entries(self) -> impl Iterator<Item = (T, Probability)> {
-        self.0.into_iter()
+    fn drain(&mut self) -> impl Iterator<Item = (T, Probability)> {
+        self.0.drain()
     }
 
     fn clear(&mut self) {
@@ -388,14 +393,6 @@ fn build_graph_from_initial_state(state: PartialSkillCheckState) -> Vec<Unevalua
 
 // TODO reduce duplication of all these build_states_*
 
-fn build_states_prob(
-    state: PartialSkillCheckState,
-) -> impl Iterator<Item = (SkillCheckState, Probability)> {
-    let mut result = ProbabilityMap::new();
-    build_states_prob_with(state, |state, probability| result.add(state, probability));
-    result.into_entries()
-}
-
 /// Calls the given `consumer` all complete states that can result from the given `state` with their
 /// respective probability. The consumer may be called multiple times with the same state with the
 /// probabilities summing to the correct probability.
@@ -403,17 +400,13 @@ fn build_states_prob_with<R>(
     state: PartialSkillCheckState,
     mut consumer: impl FnMut(SkillCheckState, Probability) -> R,
 ) {
+    let remaining_steps = steps_to_completeness(&state);
     let mut current_states = ProbabilityMap::new();
     current_states.add(state, Probability::ONE);
     let mut next_states = ProbabilityMap::new();
 
-    while !current_states.0.is_empty() {
+    for _ in 0..remaining_steps {
         for (state, probability) in current_states.entries() {
-            if let Some(state) = state.as_skill_check_state() {
-                consumer(state, probability);
-                continue;
-            }
-
             with_partial_state_children(state, |child_state, child_probability| {
                 next_states.add(child_state, child_probability * probability);
             });
@@ -422,6 +415,10 @@ fn build_states_prob_with<R>(
         mem::swap(&mut current_states, &mut next_states);
         next_states.clear();
     }
+
+    current_states.drain().for_each(|(state, probability)| {
+        consumer(state.as_skill_check_state().unwrap(), probability);
+    });
 }
 
 fn extract_complete_states(
