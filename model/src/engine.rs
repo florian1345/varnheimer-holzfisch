@@ -1,353 +1,55 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
+use std::{array, mem};
 
 use rayon::prelude::*;
 
-use crate::check::outcome::{
-    SkillCheckOutcome,
-    SkillCheckOutcomeKind,
-    SkillCheckOutcomeProbabilities,
-};
+use crate::check::outcome::SkillCheckOutcomeProbabilities;
 use crate::check::{
-    DICE_PER_SKILL_CHECK,
     PartialSkillCheckState,
     SkillCheckAction,
     SkillCheckActionResult,
     SkillCheckState,
 };
-use crate::evaluation::{Evaluated, Evaluation, SkillCheckEvaluator};
+use crate::evaluation::{Evaluated, SkillCheckEvaluator};
 use crate::probability::Probability;
 use crate::roll::{DICE_SIDES, Roll};
-use crate::skill::{Attribute, QualityLevel, SkillPoints};
 
-trait HasSkill {
-    fn skill_value_mut(&mut self) -> &mut SkillPoints;
-
-    fn attributes_mut(&mut self) -> &mut [Attribute];
-}
-
-impl HasSkill for SkillCheckState {
-    fn skill_value_mut(&mut self) -> &mut SkillPoints {
-        &mut self.skill_value
-    }
-
-    fn attributes_mut(&mut self) -> &mut [Attribute] {
-        &mut self.attributes
-    }
-}
-
-impl HasSkill for PartialSkillCheckState {
-    fn skill_value_mut(&mut self) -> &mut SkillPoints {
-        &mut self.skill_value
-    }
-
-    fn attributes_mut(&mut self) -> &mut [Attribute] {
-        &mut self.attributes
-    }
-}
-
-fn normalize(state: &mut impl HasSkill) {
-    let roll_1 = Roll::new(1).unwrap();
-    let attribute_1 = Attribute::new(1);
-    let attribute_20 = Attribute::new(20);
-    let mut missing_skill_points = SkillPoints::new(0);
-
-    for attribute in state.attributes_mut() {
-        missing_skill_points += attribute.missing_skill_points(roll_1);
-        *attribute = (*attribute).max(attribute_1).min(attribute_20);
-    }
-
-    *state.skill_value_mut() -= missing_skill_points;
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-struct PartialOutcome {
-    min_rolls: usize,
-    max_rolls: usize,
-    skill_points: SkillPoints,
-}
-
-impl PartialOutcome {
-    fn new(skill_value: SkillPoints) -> Self {
-        Self {
-            min_rolls: 0,
-            max_rolls: 0,
-            skill_points: skill_value,
-        }
-    }
-
-    fn apply_roll(mut self, roll: Roll, attribute: Attribute) -> Self {
-        if roll == Roll::MAX {
-            self.max_rolls += 1;
-
-            if self.max_rolls >= DICE_PER_SKILL_CHECK - 1 {
-                // Make sure skill points of all critical failures are equal to maximize overlap
-                self.skill_points = SkillPoints::new(-1);
-                return self;
-            }
-        }
-        else if roll == Roll::MIN {
-            self.min_rolls += 1;
-        }
-
-        self.skill_points -= attribute.missing_skill_points(roll);
-        self
-    }
-
-    fn apply_known_rolls(mut self, state: &PartialSkillCheckState) -> Self {
-        let known_rolls = state
-            .fixed_rolls
-            .into_iter()
-            .zip(state.attributes)
-            .filter_map(|(roll, attribute)| roll.map(|roll| (roll, attribute)));
-
-        for (roll, attribute) in known_rolls {
-            self = self.apply_roll(roll, attribute);
-        }
-
-        self
-    }
-
-    fn to_outcome_kind(
-        self,
-        extra_sp_on_success: SkillPoints,
-        extra_ql_on_success: Option<QualityLevel>,
-    ) -> SkillCheckOutcomeKind {
-        let skill_points = if self.skill_points.is_negative() {
-            self.skill_points
-        }
-        else {
-            self.skill_points + extra_sp_on_success
-        };
-
-        if self.min_rolls < DICE_PER_SKILL_CHECK - 1 && self.max_rolls < DICE_PER_SKILL_CHECK - 1 {
-            skill_points
-                .quality_level()
-                .map(|ql| {
-                    extra_ql_on_success
-                        .map(|extra_ql| ql.saturating_add(extra_ql))
-                        .unwrap_or(ql)
-                })
-                .map(SkillCheckOutcomeKind::Success)
-                .unwrap_or(SkillCheckOutcomeKind::Failure)
-        }
-        else if self.min_rolls >= DICE_PER_SKILL_CHECK - 1 {
-            let base_quality_level = skill_points.quality_level().unwrap_or(QualityLevel::ONE);
-            let quality_level = extra_ql_on_success
-                .map(|extra_ql| base_quality_level.saturating_add(extra_ql))
-                .unwrap_or(base_quality_level);
-
-            if self.min_rolls == DICE_PER_SKILL_CHECK - 1 {
-                SkillCheckOutcomeKind::CriticalSuccess(quality_level)
-            }
-            else {
-                SkillCheckOutcomeKind::SpectacularSuccess(quality_level)
-            }
-        }
-        else if self.max_rolls == DICE_PER_SKILL_CHECK - 1 {
-            SkillCheckOutcomeKind::CriticalFailure
-        }
-        else {
-            SkillCheckOutcomeKind::SpectacularFailure
-        }
-    }
-
-    fn to_outcome_without_modifiers(
-        self,
-        extra_sp_on_success: SkillPoints,
-        extra_ql_on_success: Option<QualityLevel>,
-    ) -> SkillCheckOutcome {
-        SkillCheckOutcome {
-            kind: self.to_outcome_kind(extra_sp_on_success, extra_ql_on_success),
-            remaining_modifiers: Default::default(),
-        }
-    }
-}
-
-struct PartialOutcomeProbabilities(HashMap<PartialOutcome, Probability>);
-
-impl PartialOutcomeProbabilities {
-    fn new() -> PartialOutcomeProbabilities {
-        PartialOutcomeProbabilities(HashMap::new())
-    }
-
-    fn of_known_outcome(outcome: PartialOutcome) -> PartialOutcomeProbabilities {
-        PartialOutcomeProbabilities(HashMap::from([(outcome, Probability::ONE)]))
-    }
-
-    fn add(&mut self, outcome: PartialOutcome, probability: Probability) {
-        *self.0.entry(outcome).or_insert(Probability::ZERO) += probability;
-    }
-
-    fn into_skill_check_outcome_probabilities_without_modifiers(
-        self,
-        extra_sp_on_success: SkillPoints,
-        extra_ql_on_success: Option<QualityLevel>,
-    ) -> SkillCheckOutcomeProbabilities {
-        let mut outcome_probabilities = SkillCheckOutcomeProbabilities::default();
-
-        for (outcome, probability) in self.0.into_iter() {
-            outcome_probabilities.add_outcome(
-                outcome.to_outcome_without_modifiers(extra_sp_on_success, extra_ql_on_success),
-                probability,
-            );
-        }
-
-        outcome_probabilities
-    }
-}
+const DIE_RESULT_PROBABILITY: Probability = Probability::new(1.0f64 / DICE_SIDES as f64).unwrap();
 
 fn cap_probability(cap: Roll) -> Probability {
     let rolls_at_least_cap = (Roll::MAX.as_u8() - cap.as_u8()) as usize + 1;
     DIE_RESULT_PROBABILITY.saturating_mul(rolls_at_least_cap)
 }
 
+fn fma_assign(
+    lhs: &mut Evaluated<SkillCheckOutcomeProbabilities>,
+    rhs: &Evaluated<SkillCheckOutcomeProbabilities>,
+    prob: Probability,
+) {
+    lhs.evaluation += rhs.evaluation * prob;
+    lhs.evaluated.saturating_fma_assign(&rhs.evaluated, prob);
+}
+
+// TODO reduce amount of cloning required
+
 #[derive(Clone)]
 pub struct VarnheimerHolzfischEngine<EvaluatorT> {
     pub evaluator: EvaluatorT,
 }
-
-const DIE_RESULT_PROBABILITY: Probability = Probability::new(1.0f64 / DICE_SIDES as f64).unwrap();
 
 impl<EvaluatorT> VarnheimerHolzfischEngine<EvaluatorT>
 where
     EvaluatorT: SkillCheckEvaluator + Send + Sync,
     EvaluatorT::Error: Send,
 {
-    fn evaluate_without_modifiers(
+    pub fn evaluate_partial(
         &self,
         state: PartialSkillCheckState,
     ) -> Result<Evaluated<SkillCheckOutcomeProbabilities>, EvaluatorT::Error> {
-        let outcome = PartialOutcome::new(state.skill_value).apply_known_rolls(&state);
-        let unknown_rolls = state
-            .fixed_rolls
-            .into_iter()
-            .zip(state.attributes)
-            .zip(state.roll_caps)
-            .filter(|((roll, _), _)| roll.is_none())
-            .map(|((_, attribute), cap)| (attribute, cap));
-        let mut current_outcome_probabilities =
-            PartialOutcomeProbabilities::of_known_outcome(outcome);
-
-        for (attribute, cap) in unknown_rolls {
-            let mut next_outcome_probabilities = PartialOutcomeProbabilities::new();
-            let mut process_roll = |roll, roll_probability| {
-                for (outcome, &outcome_probability) in current_outcome_probabilities.0.iter() {
-                    next_outcome_probabilities.add(
-                        outcome.apply_roll(roll, attribute),
-                        roll_probability * outcome_probability,
-                    );
-                }
-            };
-
-            let rolls_to_analyze = if let Some(cap) = cap {
-                process_roll(cap, cap_probability(cap));
-
-                Roll::ALL.split(|&roll| roll == cap).next().unwrap()
-            }
-            else {
-                &Roll::ALL
-            };
-
-            for &roll in rolls_to_analyze {
-                process_roll(roll, DIE_RESULT_PROBABILITY);
-            }
-
-            current_outcome_probabilities = next_outcome_probabilities;
-        }
-
-        let outcome_probabilities = current_outcome_probabilities
-            .into_skill_check_outcome_probabilities_without_modifiers(
-                state.extra_skill_points_on_success,
-                state.extra_quality_levels_on_success,
-            );
-        let evaluation = self
-            .evaluator
-            .evaluate_probabilities(&outcome_probabilities)?;
-
-        Ok(Evaluated {
-            evaluated: outcome_probabilities,
-            evaluation,
-        })
-    }
-
-    pub fn evaluate_action(
-        &self,
-        state: SkillCheckState,
-        action: SkillCheckAction,
-    ) -> Result<Evaluated<SkillCheckOutcomeProbabilities>, EvaluatorT::Error> {
-        match action.apply(state) {
-            SkillCheckActionResult::Done(outcome) => {
-                let evaluation = self.evaluator.evaluate(&outcome)?;
-
-                Ok(Evaluated {
-                    evaluated: SkillCheckOutcomeProbabilities::of_known_outcome(outcome),
-                    evaluation,
-                })
-            },
-            SkillCheckActionResult::State(state) => self.evaluate_rec(state),
-            SkillCheckActionResult::PartialState(partial_state) => {
-                self.evaluate_partial_rec(partial_state)
-            },
-        }
-    }
-
-    fn evaluate_partial_rec(
-        &self,
-        mut state: PartialSkillCheckState,
-    ) -> Result<Evaluated<SkillCheckOutcomeProbabilities>, EvaluatorT::Error> {
-        if let Some(state) = state.as_skill_check_state() {
-            return self.evaluate_rec(state);
-        }
-
-        if state.inaptitude && state.fixed_rolls.iter().all(Option::is_some) {
-            state.apply_inaptitude();
-        }
-
-        if state.modifiers.is_empty() && !state.inaptitude {
-            return self.evaluate_without_modifiers(state);
-        }
-
-        let first_unrolled_idx = state.fixed_rolls.iter().position(Option::is_none).unwrap();
-        let mut probabilities = SkillCheckOutcomeProbabilities::default();
-        let mut evaluation = Evaluation::ZERO;
-
-        let rolls_to_analyze = if let Some(cap) = state.roll_caps[first_unrolled_idx] {
-            // evaluate rolling >= the cap first, then the rest in the loop below
-            let probability = cap_probability(cap);
-            let mut child_state = state.clone();
-            child_state.fixed_rolls[first_unrolled_idx] = Some(cap);
-            let sub_evaluated = self.evaluate_partial_rec(child_state)?;
-            probabilities.saturating_add_assign(&(sub_evaluated.evaluated.clone() * probability));
-            evaluation += sub_evaluated.evaluation * probability;
-
-            Roll::ALL.split(|&roll| roll == cap).next().unwrap()
-        }
-        else {
-            // no cap given, all options are equally likely
-            &Roll::ALL
-        };
-
-        for &roll in rolls_to_analyze {
-            let mut child_state = state.clone();
-            child_state.fixed_rolls[first_unrolled_idx] = Some(roll);
-            let sub_evaluated = self.evaluate_partial_rec(child_state)?;
-            probabilities
-                .saturating_add_assign(&(sub_evaluated.evaluated.clone() * DIE_RESULT_PROBABILITY));
-            evaluation += sub_evaluated.evaluation * DIE_RESULT_PROBABILITY;
-        }
-
-        Ok(Evaluated {
-            evaluated: probabilities,
-            evaluation,
-        })
-    }
-
-    pub fn evaluate_partial(
-        &self,
-        mut state: PartialSkillCheckState,
-    ) -> Result<Evaluated<SkillCheckOutcomeProbabilities>, EvaluatorT::Error> {
-        normalize(&mut state);
-        self.evaluate_partial_rec(state)
+        let unevaluated_graph = build_graph_from_initial_state(state.clone());
+        let top_evaluated_layer = self.eval_graph(unevaluated_graph)?;
+        Ok(self.eval_partial_by_resolving_to_complete(state, &top_evaluated_layer.states))
     }
 
     pub fn evaluate_all_actions(
@@ -355,34 +57,454 @@ where
         skill_check: SkillCheckState,
     ) -> Result<Vec<(SkillCheckAction, Evaluated<SkillCheckOutcomeProbabilities>)>, EvaluatorT::Error>
     {
-        let mut result = skill_check
+        let unevaluated_graph = build_graph_from_initial_state(PartialSkillCheckState {
+            attributes: skill_check.attributes,
+            roll_caps: [None, None, None],
+            fixed_rolls: array::from_fn(|i| Some(skill_check.rolls[i])),
+            skill_value: skill_check.skill_value,
+            extra_quality_levels_on_success: skill_check.extra_quality_levels_on_success,
+            extra_skill_points_on_success: skill_check.extra_skill_points_on_success,
+            modifiers: skill_check.modifiers.clone(),
+            inaptitude: false,
+        });
+        let top_evaluated_layer = self.eval_graph(unevaluated_graph.into_iter().skip(1))?;
+
+        // TODO export EvaluatedAction instead of using tuples
+        Ok(self
+            .eval_state(&skill_check, &top_evaluated_layer)?
+            .into_iter()
+            .map(|action| (action.action, action.evaluated))
+            .collect::<Vec<_>>())
+    }
+
+    fn eval_graph(
+        &self,
+        graph: impl IntoIterator<IntoIter: DoubleEndedIterator<Item = UnevaluatedLayer>>,
+    ) -> Result<EvaluatedLayer, EvaluatorT::Error> {
+        let mut current_layer = EvaluatedLayer {
+            preceding_partial_states: PartialStateMap::new(),
+            states: HashMap::new(),
+        };
+
+        for layer in graph.into_iter().rev() {
+            let next_states: HashMap<SkillCheckState, EvaluatedAction> = layer
+                .states
+                .into_par_iter()
+                .map(|state| {
+                    let best_action = self
+                        .eval_state(&state, &current_layer)?
+                        .into_iter()
+                        .next()
+                        .unwrap();
+                    Ok((state, best_action))
+                })
+                .collect::<Result<_, _>>()?;
+
+            let mut next_preceding_partial_states = PartialStateMap::new();
+            let mut preceding_partial_states_iter = layer
+                .preceding_partial_states
+                .sets_by_remaining_steps
+                .into_iter();
+
+            if let Some(partial_layer_1) = preceding_partial_states_iter.next() {
+                let eval_layer = partial_layer_1
+                    .into_par_iter()
+                    .map(|partial_state| {
+                        let evaluated = self.eval_partial_by_resolving_to_complete(
+                            partial_state.clone(),
+                            &next_states,
+                        );
+                        (partial_state, evaluated)
+                    })
+                    .collect::<HashMap<_, _>>();
+
+                next_preceding_partial_states
+                    .maps_by_remaining_steps
+                    .push(eval_layer);
+            }
+
+            for partial_layer in preceding_partial_states_iter {
+                let eval_layer = partial_layer
+                    .into_par_iter()
+                    .map(|partial_state| {
+                        let evaluated = self.eval_partial_by_resolving_to_children(
+                            &partial_state,
+                            next_preceding_partial_states
+                                .maps_by_remaining_steps
+                                .last()
+                                .unwrap(),
+                        );
+                        (partial_state, evaluated)
+                    })
+                    .collect::<HashMap<_, _>>();
+                next_preceding_partial_states
+                    .maps_by_remaining_steps
+                    .push(eval_layer);
+            }
+
+            current_layer = EvaluatedLayer {
+                states: next_states,
+                preceding_partial_states: next_preceding_partial_states,
+            };
+        }
+
+        Ok(current_layer)
+    }
+
+    fn eval_state(
+        &self,
+        state: &SkillCheckState,
+        next_layer: &EvaluatedLayer,
+    ) -> Result<Vec<EvaluatedAction>, EvaluatorT::Error> {
+        let mut result = state
             .legal_actions()
-            .into_par_iter()
-            .map(|action| Ok((action, self.evaluate_action(skill_check.clone(), action)?)))
+            .into_iter()
+            .map(|action| {
+                let evaluated = match action.apply(state.clone()) {
+                    SkillCheckActionResult::Done(outcome) => {
+                        let evaluation = self.evaluator.evaluate(&outcome)?;
+
+                        Evaluated {
+                            evaluation,
+                            evaluated: SkillCheckOutcomeProbabilities::of_known_outcome(outcome),
+                        }
+                    },
+                    SkillCheckActionResult::State(state) => {
+                        next_layer.states[&state].evaluated.clone()
+                    },
+                    SkillCheckActionResult::PartialState(state) => next_layer
+                        .preceding_partial_states
+                        .get(&state)
+                        .unwrap()
+                        .clone(),
+                };
+
+                Ok(EvaluatedAction { action, evaluated })
+            })
             .collect::<Result<Vec<_>, _>>()?;
 
-        result.sort_by_key(|(_, evaluated)| -evaluated.evaluation);
-
+        result.sort_by_key(|evaluated_action| -evaluated_action.evaluated.evaluation);
         Ok(result)
     }
 
-    fn evaluate_rec(
+    fn eval_partial_by_resolving_to_children(
         &self,
-        skill_check: SkillCheckState,
-    ) -> Result<Evaluated<SkillCheckOutcomeProbabilities>, EvaluatorT::Error> {
-        Ok(self
-            .evaluate_all_actions(skill_check)?
-            .into_iter()
-            .map(|(_, evaluated)| evaluated)
-            .max_by_key(|evaluated| evaluated.evaluation)
-            .unwrap())
+        state: &PartialSkillCheckState,
+        next_layer_partial_evals: &HashMap<
+            PartialSkillCheckState,
+            Evaluated<SkillCheckOutcomeProbabilities>,
+        >,
+    ) -> Evaluated<SkillCheckOutcomeProbabilities> {
+        let mut result = Evaluated::default();
+
+        with_partial_state_children(state, |child_state, prob| {
+            fma_assign(&mut result, &next_layer_partial_evals[&child_state], prob);
+        });
+
+        result
     }
 
-    pub fn evaluate(
+    fn eval_partial_by_resolving_to_complete(
         &self,
-        mut skill_check: SkillCheckState,
-    ) -> Result<Evaluated<SkillCheckOutcomeProbabilities>, EvaluatorT::Error> {
-        normalize(&mut skill_check);
-        self.evaluate_rec(skill_check)
+        state: PartialSkillCheckState,
+        next_layer_skill_check_state_evals: &HashMap<SkillCheckState, EvaluatedAction>,
+    ) -> Evaluated<SkillCheckOutcomeProbabilities> {
+        let mut result = Evaluated::default();
+
+        build_states_prob_with(state, |state, prob| {
+            fma_assign(
+                &mut result,
+                &next_layer_skill_check_state_evals[&state].evaluated,
+                prob,
+            );
+        });
+
+        result
+    }
+}
+
+fn steps_to_completeness(state: &PartialSkillCheckState) -> usize {
+    let remaining_rolls = state
+        .fixed_rolls
+        .iter()
+        .copied()
+        .filter(Option::is_none)
+        .count();
+    let remaining_steps_by_inaptitude = state.inaptitude as usize * 2; // inaptitude - reroll
+
+    remaining_rolls + remaining_steps_by_inaptitude
+}
+
+#[derive(Clone)]
+struct PartialStateSet {
+    /// Set at index `i` contains states which require `i + 1` steps to become complete.
+    sets_by_remaining_steps: Vec<HashSet<PartialSkillCheckState>>,
+}
+
+impl PartialStateSet {
+    fn new() -> PartialStateSet {
+        PartialStateSet {
+            sets_by_remaining_steps: Vec::new(),
+        }
+    }
+
+    fn try_insert(&mut self, state: PartialSkillCheckState) -> Option<SkillCheckState> {
+        let remaining_steps = steps_to_completeness(&state);
+
+        if remaining_steps == 0 {
+            return Some(state.as_skill_check_state().unwrap());
+        }
+
+        let index = remaining_steps - 1;
+
+        while self.sets_by_remaining_steps.len() <= index {
+            self.sets_by_remaining_steps.push(HashSet::new());
+        }
+
+        self.sets_by_remaining_steps[index].insert(state);
+        None
+    }
+
+    fn set_count(&self) -> usize {
+        self.sets_by_remaining_steps.len()
+    }
+
+    fn borrow_consecutive(
+        &mut self,
+        lower_index: usize,
+    ) -> (
+        &mut HashSet<PartialSkillCheckState>,
+        &mut HashSet<PartialSkillCheckState>,
+    ) {
+        let mut iter = self.sets_by_remaining_steps[lower_index..].iter_mut();
+
+        (iter.next().unwrap(), iter.next().unwrap())
+    }
+
+    fn try_extend(
+        &mut self,
+        iter: impl IntoIterator<Item = PartialSkillCheckState>,
+    ) -> impl Iterator<Item = SkillCheckState> {
+        iter.into_iter().filter_map(|state| self.try_insert(state))
+    }
+}
+
+struct PartialStateMap<T> {
+    /// Map at index `i` contains states which require `i + 1` steps to become complete.
+    maps_by_remaining_steps: Vec<HashMap<PartialSkillCheckState, T>>,
+}
+
+impl<T: Sync> PartialStateMap<T> {
+    fn new() -> PartialStateMap<T> {
+        PartialStateMap {
+            maps_by_remaining_steps: Vec::new(),
+        }
+    }
+
+    fn get(&self, state: &PartialSkillCheckState) -> Option<&T> {
+        let index = steps_to_completeness(state) - 1;
+        self.maps_by_remaining_steps
+            .get(index)
+            .and_then(|map| map.get(state))
+    }
+}
+
+struct UnevaluatedLayer {
+    preceding_partial_states: PartialStateSet,
+    states: HashSet<SkillCheckState>,
+}
+
+#[derive(Clone)]
+struct EvaluatedAction {
+    action: SkillCheckAction,
+    evaluated: Evaluated<SkillCheckOutcomeProbabilities>,
+}
+
+struct EvaluatedLayer {
+    preceding_partial_states: PartialStateMap<Evaluated<SkillCheckOutcomeProbabilities>>,
+    states: HashMap<SkillCheckState, EvaluatedAction>,
+}
+
+struct ProbabilityMap<T>(HashMap<T, Probability>);
+
+impl<T: Eq + Hash> ProbabilityMap<T> {
+    fn new() -> ProbabilityMap<T> {
+        ProbabilityMap(HashMap::new())
+    }
+
+    fn add(&mut self, state: T, probability: Probability) {
+        let current_prob = self.0.entry(state).or_insert(Probability::ZERO);
+        *current_prob = (*current_prob).saturating_add(probability);
+    }
+
+    fn entries(&self) -> impl Iterator<Item = (&T, Probability)> {
+        self.0.iter().map(|(state, &prob)| (state, prob))
+    }
+
+    fn drain(&mut self) -> impl Iterator<Item = (T, Probability)> {
+        self.0.drain()
+    }
+
+    fn clear(&mut self) {
+        self.0.clear();
+    }
+}
+
+fn build_graph_from_initial_state(state: PartialSkillCheckState) -> Vec<UnevaluatedLayer> {
+    let (preceding_partial_states, states) =
+        build_partial_states_into_partial_set_and_complete_states([state]);
+    let initial_layer = UnevaluatedLayer {
+        states,
+        preceding_partial_states,
+    };
+    let mut graph = vec![initial_layer];
+
+    while !graph.last().unwrap().states.is_empty() {
+        let mut next_partial_states = HashSet::new();
+        let mut next_states = HashSet::new();
+
+        for state in &graph.last().unwrap().states {
+            let actions = state
+                .legal_actions()
+                .into_iter()
+                .filter(|action| action != &SkillCheckAction::Accept);
+
+            for action in actions {
+                match action.apply(state.clone()) {
+                    SkillCheckActionResult::State(state) => {
+                        next_states.insert(state);
+                    },
+                    SkillCheckActionResult::PartialState(state) => {
+                        next_partial_states.insert(state);
+                    },
+                    SkillCheckActionResult::Done(_) => unreachable!(
+                        "received done action result even though Accept was filtered out"
+                    ),
+                }
+            }
+        }
+
+        let preceding_partial_states =
+            build_partial_states_into_partial_set_and_complete_states_into(
+                next_partial_states,
+                &mut next_states,
+            );
+
+        graph.push(UnevaluatedLayer {
+            states: next_states,
+            preceding_partial_states,
+        })
+    }
+
+    graph.pop();
+    graph
+}
+
+/// Calls the given `consumer` with all complete states that can result from the given `state` with
+/// their respective probability. The consumer may be called multiple times with the same state with
+/// the probabilities summing to the correct probability.
+fn build_states_prob_with<R>(
+    state: PartialSkillCheckState,
+    mut consumer: impl FnMut(SkillCheckState, Probability) -> R,
+) {
+    let remaining_steps = steps_to_completeness(&state);
+    let mut current_states = ProbabilityMap::new();
+    current_states.add(state, Probability::ONE);
+    let mut next_states = ProbabilityMap::new();
+
+    for _ in 0..remaining_steps {
+        for (state, probability) in current_states.entries() {
+            with_partial_state_children(state, |child_state, child_probability| {
+                next_states.add(child_state, child_probability * probability);
+            });
+        }
+
+        mem::swap(&mut current_states, &mut next_states);
+        next_states.clear();
+    }
+
+    current_states.drain().for_each(|(state, probability)| {
+        consumer(state.as_skill_check_state().unwrap(), probability);
+    });
+}
+
+fn build_partial_states_into_partial_set_and_complete_states(
+    root_states: impl IntoIterator<Item = PartialSkillCheckState>,
+) -> (PartialStateSet, HashSet<SkillCheckState>) {
+    let mut complete_states = HashSet::new();
+    let states = build_partial_states_into_partial_set_and_complete_states_into(
+        root_states,
+        &mut complete_states,
+    );
+    (states, complete_states)
+}
+
+fn build_partial_states_into_partial_set_and_complete_states_into(
+    root_states: impl IntoIterator<Item = PartialSkillCheckState>,
+    complete_states: &mut HashSet<SkillCheckState>,
+) -> PartialStateSet {
+    let mut states = PartialStateSet::new();
+    complete_states.extend(states.try_extend(root_states));
+
+    for lower_index in (0..states.set_count().saturating_sub(1)).rev() {
+        let (next_states, current_states) = states.borrow_consecutive(lower_index);
+
+        for state in current_states.iter() {
+            with_partial_state_children(state, |child_state, _| {
+                next_states.insert(child_state);
+            });
+        }
+    }
+
+    states
+        .sets_by_remaining_steps
+        .first()
+        .into_iter()
+        .flat_map(HashSet::iter)
+        .for_each(|state| {
+            with_partial_state_children(state, |child_state, _| {
+                complete_states.insert(child_state.as_skill_check_state().unwrap());
+            })
+        });
+
+    states
+}
+
+/// Calls the given `consumer` with partial states that are direct children from the given state
+/// (i.e., inaptitude applied or one roll rerolled). It is assumed that the state is not in fact
+/// complete. Otherwise, this function will panic.
+fn with_partial_state_children(
+    state: &PartialSkillCheckState,
+    mut consumer: impl FnMut(PartialSkillCheckState, Probability),
+) {
+    if state.inaptitude && state.fixed_rolls.iter().all(Option::is_some) {
+        let mut child_state = state.clone();
+        child_state.apply_inaptitude();
+        consumer(child_state, Probability::ONE);
+        return;
+    }
+
+    let first_unrolled_idx = state.fixed_rolls.iter().position(Option::is_none).unwrap();
+
+    let rolls_to_analyze = if let Some(cap) = state.roll_caps[first_unrolled_idx] {
+        // evaluate rolling >= the cap first, then the rest in the loop below
+        let roll_probability = cap_probability(cap);
+        let mut child_state = state.clone();
+        child_state.fixed_rolls[first_unrolled_idx] = Some(cap);
+        child_state.roll_caps[first_unrolled_idx] = None;
+        consumer(child_state, roll_probability);
+
+        Roll::ALL.split(|&roll| roll == cap).next().unwrap()
+    }
+    else {
+        // no cap given, all options are equally likely
+        &Roll::ALL
+    };
+
+    for &roll in rolls_to_analyze {
+        let mut child_state = state.clone();
+        child_state.fixed_rolls[first_unrolled_idx] = Some(roll);
+        child_state.roll_caps[first_unrolled_idx] = None;
+        consumer(child_state, DIE_RESULT_PROBABILITY);
     }
 }

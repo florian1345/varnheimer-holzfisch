@@ -10,7 +10,7 @@ use crate::skill::{Attribute, QualityLevel, SkillPoints};
 
 pub const DICE_PER_SKILL_CHECK: usize = 3;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct SkillCheckState {
     pub attributes: [Attribute; DICE_PER_SKILL_CHECK],
     pub rolls: [Roll; DICE_PER_SKILL_CHECK],
@@ -189,7 +189,7 @@ impl SkillCheckAction {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct PartialSkillCheckState {
     pub attributes: [Attribute; DICE_PER_SKILL_CHECK],
     pub roll_caps: [Option<Roll>; DICE_PER_SKILL_CHECK],

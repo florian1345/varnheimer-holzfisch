@@ -82,6 +82,22 @@ impl SkillCheckOutcomeProbabilities {
         }
     }
 
+    pub fn saturating_fma_assign(
+        &mut self,
+        other: &SkillCheckOutcomeProbabilities,
+        probability: Probability,
+    ) {
+        for (outcome, &outcome_probability) in &other.map {
+            if let Some(value) = self.map.get_mut(outcome) {
+                *value = (*value).saturating_add(outcome_probability * probability);
+            }
+            else {
+                self.map
+                    .insert(outcome.clone(), outcome_probability * probability);
+            }
+        }
+    }
+
     pub fn add_outcome(&mut self, outcome: SkillCheckOutcome, probability: Probability) {
         let entry = self.map.entry(outcome).or_insert(Probability::ZERO);
         *entry = (*entry).saturating_add(probability);
