@@ -48,8 +48,8 @@ where
         state: PartialSkillCheckState,
     ) -> Result<Evaluated<SkillCheckOutcomeProbabilities>, EvaluatorT::Error> {
         let unevaluated_graph = build_graph_from_initial_state(state.clone());
-        let evaluated_graph = self.eval_graph(unevaluated_graph)?;
-        Ok(self.eval_partial_by_resolving_to_complete(state, &evaluated_graph.states))
+        let top_evaluated_layer = self.eval_graph(unevaluated_graph)?;
+        Ok(self.eval_partial_by_resolving_to_complete(state, &top_evaluated_layer.states))
     }
 
     pub fn evaluate_all_actions(
@@ -67,11 +67,11 @@ where
             modifiers: skill_check.modifiers.clone(),
             inaptitude: false,
         });
-        let evaluated_graph = self.eval_graph(unevaluated_graph.into_iter().skip(1))?;
+        let top_evaluated_layer = self.eval_graph(unevaluated_graph.into_iter().skip(1))?;
 
         // TODO export EvaluatedAction instead of using tuples
         Ok(self
-            .eval_state(&skill_check, &evaluated_graph)?
+            .eval_state(&skill_check, &top_evaluated_layer)?
             .into_iter()
             .map(|action| (action.action, action.evaluated))
             .collect::<Vec<_>>())
@@ -101,14 +101,10 @@ where
                 .collect::<Result<_, _>>()?;
 
             let mut next_preceding_partial_states = PartialStateMap::new();
-            next_preceding_partial_states
-                .maps_by_remaining_steps
-                .push(HashMap::new());
             let mut preceding_partial_states_iter = layer
                 .preceding_partial_states
                 .sets_by_remaining_steps
-                .into_iter()
-                .skip(1);
+                .into_iter();
 
             if let Some(partial_layer_1) = preceding_partial_states_iter.next() {
                 let eval_layer = partial_layer_1
@@ -241,6 +237,7 @@ fn steps_to_completeness(state: &PartialSkillCheckState) -> usize {
 
 #[derive(Clone)]
 struct PartialStateSet {
+    /// Set at index `i` contains states which require `i + 1` steps to become complete.
     sets_by_remaining_steps: Vec<HashSet<PartialSkillCheckState>>,
 }
 
@@ -251,14 +248,21 @@ impl PartialStateSet {
         }
     }
 
-    fn insert(&mut self, state: PartialSkillCheckState) {
-        let index = steps_to_completeness(&state);
+    fn try_insert(&mut self, state: PartialSkillCheckState) -> Option<SkillCheckState> {
+        let remaining_steps = steps_to_completeness(&state);
+
+        if remaining_steps == 0 {
+            return Some(state.as_skill_check_state().unwrap());
+        }
+
+        let index = remaining_steps - 1;
 
         while self.sets_by_remaining_steps.len() <= index {
             self.sets_by_remaining_steps.push(HashSet::new());
         }
 
         self.sets_by_remaining_steps[index].insert(state);
+        None
     }
 
     fn set_count(&self) -> usize {
@@ -277,14 +281,16 @@ impl PartialStateSet {
         (iter.next().unwrap(), iter.next().unwrap())
     }
 
-    fn extend_with(&mut self, iter: impl IntoIterator<Item = PartialSkillCheckState>) {
-        for state in iter {
-            self.insert(state);
-        }
+    fn try_extend(
+        &mut self,
+        iter: impl IntoIterator<Item = PartialSkillCheckState>,
+    ) -> impl Iterator<Item = SkillCheckState> {
+        iter.into_iter().filter_map(|state| self.try_insert(state))
     }
 }
 
 struct PartialStateMap<T> {
+    /// Map at index `i` contains states which require `i + 1` steps to become complete.
     maps_by_remaining_steps: Vec<HashMap<PartialSkillCheckState, T>>,
 }
 
@@ -296,7 +302,7 @@ impl<T: Sync> PartialStateMap<T> {
     }
 
     fn get(&self, state: &PartialSkillCheckState) -> Option<&T> {
-        let index = steps_to_completeness(state);
+        let index = steps_to_completeness(state) - 1;
         self.maps_by_remaining_steps
             .get(index)
             .and_then(|map| map.get(state))
@@ -345,9 +351,10 @@ impl<T: Eq + Hash> ProbabilityMap<T> {
 }
 
 fn build_graph_from_initial_state(state: PartialSkillCheckState) -> Vec<UnevaluatedLayer> {
-    let preceding_partial_states = build_states_many_into_partial_set([state]);
+    let (preceding_partial_states, states) =
+        build_partial_states_into_partial_set_and_complete_states([state]);
     let initial_layer = UnevaluatedLayer {
-        states: extract_complete_states(&preceding_partial_states).collect(),
+        states,
         preceding_partial_states,
     };
     let mut graph = vec![initial_layer];
@@ -377,9 +384,11 @@ fn build_graph_from_initial_state(state: PartialSkillCheckState) -> Vec<Unevalua
             }
         }
 
-        let preceding_partial_states = build_states_many_into_partial_set(next_partial_states);
-
-        next_states.extend(extract_complete_states(&preceding_partial_states));
+        let preceding_partial_states =
+            build_partial_states_into_partial_set_and_complete_states_into(
+                next_partial_states,
+                &mut next_states,
+            );
 
         graph.push(UnevaluatedLayer {
             states: next_states,
@@ -391,11 +400,9 @@ fn build_graph_from_initial_state(state: PartialSkillCheckState) -> Vec<Unevalua
     graph
 }
 
-// TODO reduce duplication of all these build_states_*
-
-/// Calls the given `consumer` all complete states that can result from the given `state` with their
-/// respective probability. The consumer may be called multiple times with the same state with the
-/// probabilities summing to the correct probability.
+/// Calls the given `consumer` with all complete states that can result from the given `state` with
+/// their respective probability. The consumer may be called multiple times with the same state with
+/// the probabilities summing to the correct probability.
 fn build_states_prob_with<R>(
     state: PartialSkillCheckState,
     mut consumer: impl FnMut(SkillCheckState, Probability) -> R,
@@ -421,25 +428,23 @@ fn build_states_prob_with<R>(
     });
 }
 
-fn extract_complete_states(
-    partial_state_set: &PartialStateSet,
-) -> impl Iterator<Item = SkillCheckState> {
-    partial_state_set
-        .sets_by_remaining_steps
-        .iter()
-        .next()
-        .into_iter()
-        .flat_map(|set| {
-            set.iter()
-                .map(|state| state.as_skill_check_state().unwrap())
-        })
+fn build_partial_states_into_partial_set_and_complete_states(
+    root_states: impl IntoIterator<Item = PartialSkillCheckState>,
+) -> (PartialStateSet, HashSet<SkillCheckState>) {
+    let mut complete_states = HashSet::new();
+    let states = build_partial_states_into_partial_set_and_complete_states_into(
+        root_states,
+        &mut complete_states,
+    );
+    (states, complete_states)
 }
 
-fn build_states_many_into_partial_set(
+fn build_partial_states_into_partial_set_and_complete_states_into(
     root_states: impl IntoIterator<Item = PartialSkillCheckState>,
+    complete_states: &mut HashSet<SkillCheckState>,
 ) -> PartialStateSet {
     let mut states = PartialStateSet::new();
-    states.extend_with(root_states);
+    complete_states.extend(states.try_extend(root_states));
 
     for lower_index in (0..states.set_count().saturating_sub(1)).rev() {
         let (next_states, current_states) = states.borrow_consecutive(lower_index);
@@ -452,8 +457,22 @@ fn build_states_many_into_partial_set(
     }
 
     states
+        .sets_by_remaining_steps
+        .get(0)
+        .into_iter()
+        .flat_map(HashSet::iter)
+        .for_each(|state| {
+            with_partial_state_children(state, |child_state, _| {
+                complete_states.insert(child_state.as_skill_check_state().unwrap());
+            })
+        });
+
+    states
 }
 
+/// Calls the given `consumer` with partial states that are direct children from the given state
+/// (i.e., inaptitude applied or one roll rerolled). It is assumed that the state is not in fact
+/// complete. Otherwise, this function will panic.
 fn with_partial_state_children(
     state: &PartialSkillCheckState,
     mut consumer: impl FnMut(PartialSkillCheckState, Probability),
