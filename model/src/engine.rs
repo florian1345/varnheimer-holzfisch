@@ -458,7 +458,7 @@ fn build_partial_states_into_partial_set_and_complete_states_into(
 
     states
         .sets_by_remaining_steps
-        .get(0)
+        .first()
         .into_iter()
         .flat_map(HashSet::iter)
         .for_each(|state| {
