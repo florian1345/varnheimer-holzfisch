@@ -260,4 +260,43 @@ mod tests {
 
         assert_that!(lhs).is_close_to(expected, epsilon);
     }
+
+    #[rstest]
+    #[case::both_empty([], [], 1.0, [])]
+    #[case::lhs_empty([], [(outcome_1(), prob(0.5))], 0.4, [(outcome_1(), prob(0.2))])]
+    #[case::rhs_empty([(outcome_1(), prob(0.5))], [], 0.4, [(outcome_1(), prob(0.5))])]
+    #[case::disjunctive(
+        [(outcome_1(), prob(0.1))],
+        [(outcome_2(), prob(0.2))],
+        0.5,
+        [(outcome_1(), prob(0.1)), (outcome_2(), prob(0.1))]
+    )]
+    #[case::overlap_without_saturation(
+        [(outcome_1(), prob(0.6))],
+        [(outcome_1(), prob(0.6)), (outcome_2(), prob(0.2))],
+        0.5,
+        [(outcome_1(), prob(0.9)), (outcome_2(), prob(0.1))]
+    )]
+    #[case::overlap_with_saturation(
+        [(outcome_1(), prob(0.3)), (outcome_2(), prob(0.5))],
+        [(outcome_2(), prob(1.0))],
+        0.6,
+        [(outcome_1(), prob(0.3)), (outcome_2(), prob(1.0))]
+    )]
+    fn skill_check_outcome_probabilities_saturating_fma_assign_works(
+        #[case] lhs: impl IntoIterator<Item = (SkillCheckOutcome, Probability)>,
+        #[case] rhs: impl IntoIterator<Item = (SkillCheckOutcome, Probability)>,
+        #[case] probability: f64,
+        #[case] expected: impl IntoIterator<Item = (SkillCheckOutcome, Probability)>,
+    ) {
+        let mut lhs = SkillCheckOutcomeProbabilities::from(lhs);
+        let rhs = SkillCheckOutcomeProbabilities::from(rhs);
+        let probability = Probability::new(probability).unwrap();
+        let expected = SkillCheckOutcomeProbabilities::from(expected);
+
+        lhs.saturating_fma_assign(&rhs, probability);
+        let epsilon = 0.001;
+
+        assert_that!(lhs).is_close_to(expected, epsilon);
+    }
 }
