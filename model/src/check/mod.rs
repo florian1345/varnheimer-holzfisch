@@ -202,24 +202,27 @@ pub struct PartialSkillCheckState {
 }
 
 impl PartialSkillCheckState {
-    pub fn as_skill_check_state(&self) -> Option<SkillCheckState> {
+    pub fn into_skill_check_state(self) -> Result<SkillCheckState, PartialSkillCheckState> {
         if self.inaptitude {
-            return None;
+            return Err(self);
         }
 
         let mut rolls = [Roll::MIN; DICE_PER_SKILL_CHECK];
 
         for (roll, &optional_fixed_roll) in rolls.iter_mut().zip(self.fixed_rolls.iter()) {
-            *roll = optional_fixed_roll?;
+            *roll = match optional_fixed_roll {
+                Some(roll) => roll,
+                None => return Err(self),
+            }
         }
 
-        Some(SkillCheckState {
+        Ok(SkillCheckState {
             attributes: self.attributes,
             rolls,
             skill_value: self.skill_value,
             extra_quality_levels_on_success: self.extra_quality_levels_on_success,
             extra_skill_points_on_success: self.extra_skill_points_on_success,
-            modifiers: self.modifiers.clone(),
+            modifiers: self.modifiers,
         })
     }
 
@@ -483,7 +486,7 @@ mod tests {
     #[case::all_rolls_missing([None, None, None], false)]
     #[case::inaptitude([Some(roll(1)), Some(roll(2)), Some(roll(3))], true)]
     #[case::inaptitude_with_missing_roll([Some(roll(1)), None, Some(roll(3))], true)]
-    fn incomplete_partial_skill_check_state_as_skill_check_state_is_none(
+    fn incomplete_partial_skill_check_state_into_skill_check_state_is_none(
         #[case] rolls: [Option<Roll>; DICE_PER_SKILL_CHECK],
         #[case] inaptitude: bool,
     ) {
@@ -495,11 +498,12 @@ mod tests {
             ..partial_skill_check_state_empty_no_options()
         };
 
-        assert_that!(partial_skill_check_state.as_skill_check_state()).is_none();
+        assert_that!(partial_skill_check_state.clone().into_skill_check_state())
+            .contains_error(partial_skill_check_state);
     }
 
     #[test]
-    fn complete_partial_skill_check_state_as_skill_check_state_works() {
+    fn complete_partial_skill_check_state_into_skill_check_state_works() {
         let attributes = [Attribute::new(10), Attribute::new(11), Attribute::new(12)];
         let skill_value = SkillPoints::new(12);
         let modifiers = ModifierState::from_modifiers([Modifier::FatePoint]);
@@ -515,14 +519,16 @@ mod tests {
             ..partial_skill_check_state_empty_no_options()
         };
 
-        assert_that!(partial_skill_check_state.as_skill_check_state()).contains(SkillCheckState {
-            attributes,
-            rolls: [roll(7), roll(8), roll(9)],
-            skill_value,
-            extra_quality_levels_on_success,
-            extra_skill_points_on_success,
-            modifiers,
-        });
+        assert_that!(partial_skill_check_state.into_skill_check_state()).contains_value(
+            SkillCheckState {
+                attributes,
+                rolls: [roll(7), roll(8), roll(9)],
+                skill_value,
+                extra_quality_levels_on_success,
+                extra_skill_points_on_success,
+                modifiers,
+            },
+        );
     }
 
     #[test]
