@@ -252,7 +252,7 @@ impl PartialStateSet {
         let remaining_steps = steps_to_completeness(&state);
 
         if remaining_steps == 0 {
-            return Some(state.as_skill_check_state().unwrap());
+            return Some(state.into_skill_check_state().unwrap());
         }
 
         let index = remaining_steps - 1;
@@ -424,7 +424,7 @@ fn build_states_prob_with<R>(
     }
 
     current_states.drain().for_each(|(state, probability)| {
-        consumer(state.as_skill_check_state().unwrap(), probability);
+        consumer(state.into_skill_check_state().unwrap(), probability);
     });
 }
 
@@ -463,7 +463,7 @@ fn build_partial_states_into_partial_set_and_complete_states_into(
         .flat_map(HashSet::iter)
         .for_each(|state| {
             with_partial_state_children(state, |child_state, _| {
-                complete_states.insert(child_state.as_skill_check_state().unwrap());
+                complete_states.insert(child_state.into_skill_check_state().unwrap());
             })
         });
 

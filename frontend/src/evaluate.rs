@@ -19,19 +19,19 @@ pub(crate) fn evaluate(
         evaluator: evaluator.clone(),
     };
 
-    if let Some(state) = partial_state.as_skill_check_state() {
-        let evaluated_actions = engine.evaluate_all_actions(state)?;
-        let (action, evaluated) = evaluated_actions.into_iter().next().unwrap();
+    match partial_state.clone().into_skill_check_state() {
+        Ok(state) => {
+            let evaluated_actions = engine.evaluate_all_actions(state)?;
+            let (action, evaluated) = evaluated_actions.into_iter().next().unwrap();
 
-        Ok(EvaluationOutcome {
-            recommended_action: Some(action),
-            evaluated_probabilities: evaluated,
-        })
-    }
-    else {
-        Ok(EvaluationOutcome {
+            Ok(EvaluationOutcome {
+                recommended_action: Some(action),
+                evaluated_probabilities: evaluated,
+            })
+        },
+        Err(partial_state) => Ok(EvaluationOutcome {
             recommended_action: None,
-            evaluated_probabilities: engine.evaluate_partial(partial_state.clone())?,
-        })
+            evaluated_probabilities: engine.evaluate_partial(partial_state)?,
+        }),
     }
 }
