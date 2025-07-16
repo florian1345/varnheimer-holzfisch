@@ -240,6 +240,82 @@ fn given_aptitude_and_fate_point_prefers_fate_point_when_appropriate() {
     assert_that!(best_move.1.evaluation).is_close_to(eval(76_413.0 / 160_000.0), EPS);
 }
 
+fn aptitude_2() -> Modifier {
+    Modifier::Aptitude(Aptitude::new(2).unwrap())
+}
+
+#[rstest]
+#[case::highest_success_probability(
+    "if is_success then 1 else 0",
+    SkillCheckAction::ConsumeModifier {
+        modifier: aptitude_2(),
+        action: ModifierAction::RerollByAptitude(Reroll::new([true, true, false]).unwrap()),
+    },
+    [
+        (SkillCheckOutcomeKind::CriticalSuccess(QL_1).without_modifiers(), 1.0 / 400.0),
+        // [1-15, 1-20, 13], [16-20, 1-14, 13] - [1, 1, 13]
+        (SkillCheckOutcomeKind::Success(QL_1).without_modifiers(), 369.0 / 400.0),
+        // Rest (400 - 1 - 369)
+        (SkillCheckOutcomeKind::Failure.without_modifiers(), 30.0 / 400.0),
+    ],
+    370.0 / 400.0
+)]
+#[case::highest_average_quality_level(
+    "quality_level",
+    SkillCheckAction::ConsumeModifier {
+        modifier: aptitude_2(),
+        action: ModifierAction::RerollByAptitude(Reroll::new([false, true, true]).unwrap()),
+    },
+    [
+        (SkillCheckOutcomeKind::CriticalSuccess(QL_3).without_modifiers(), 1.0 / 400.0),
+        // [16, 1-12, 1-9] - [16, 1, 1]
+        (SkillCheckOutcomeKind::Success(QL_3).without_modifiers(), 107.0 / 400.0),
+        // [16, 1-12, 10-12], [16, 13, 1-11], [16, 14, 1-10], [16, 15-20, 1-9]
+        (SkillCheckOutcomeKind::Success(QL_2).without_modifiers(), 111.0 / 400.0),
+        // [16, 1-14, 1-20], [16, 15-20, 1-13] - <other success probs>
+        (SkillCheckOutcomeKind::Success(QL_1).without_modifiers(), 139.0 / 400.0),
+        // Rest (400 - 1 - 107 - 111 - 139)
+        (SkillCheckOutcomeKind::Failure.without_modifiers(), 42.0 / 400.0),
+    ],
+    685.0 / 400.0
+)]
+#[case::aptitude_too_expensive(
+    "(if quality_level > 2 then 1.0 else 0.0) + as_float(remaining_aptitudes(2)) * 0.3",
+    SkillCheckAction::Accept,
+    [(SkillCheckOutcomeKind::Failure.with_modifiers([aptitude_2()]), 1.0)],
+    0.3
+)]
+fn given_two_dice_aptitude_evaluates_options_correctly(
+    #[case] scholle_code: &str,
+    #[case] expected_best_action: SkillCheckAction,
+    #[case] expected_outcome_probabilities: impl IntoIterator<Item = (SkillCheckOutcome, f64)>,
+    #[case] expected_evaluation: f64,
+) {
+    let skill_check_state = SkillCheckState {
+        attributes: [Attribute::new(15), Attribute::new(12), Attribute::new(9)],
+        rolls: [roll(16), roll(15), roll(14)],
+        skill_value: SkillPoints::new(8),
+        modifiers: ModifierState::from_modifiers([aptitude_2()]),
+        ..default()
+    };
+
+    let engine = engine(scholle_code);
+
+    let evaluated = engine.evaluate_all_actions(skill_check_state).unwrap();
+    let best_move = evaluated[0].clone();
+
+    assert_that!(best_move.0).is_equal_to(expected_best_action);
+    assert_that!(best_move.1.evaluated).is_close_to(
+        SkillCheckOutcomeProbabilities::from(
+            expected_outcome_probabilities
+                .into_iter()
+                .map(|(outcome_kind, prob)| outcome_prob(outcome_kind, prob)),
+        ),
+        EPS,
+    );
+    assert_that!(best_move.1.evaluation).is_close_to(eval(expected_evaluation), EPS);
+}
+
 #[test]
 fn given_costly_extra_skill_points_on_success_prefers_rerolling_first() {
     // In this scenario, rerolling dice 1 and 3 is optimal to get max QL.
