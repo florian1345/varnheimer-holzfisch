@@ -271,7 +271,7 @@ pub fn ModifierStateInput(
             NewModifierInput {
                 on_added: move |modifier| {
                     let mut new_modifier_state = modifier_state.clone();
-                    new_modifier_state.add(modifier);
+                    new_modifier_state.insert(modifier);
                     on_change(new_modifier_state);
                 }
             }
