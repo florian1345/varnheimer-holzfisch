@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use std::num::NonZeroUsize;
+use std::ops::{Add, AddAssign};
 
 use crate::check::DICE_PER_SKILL_CHECK;
 use crate::check::outcome::SkillCheckOutcome;
@@ -165,7 +166,7 @@ impl ModifierState {
         let mut result = ModifierState::default();
         modifiers
             .into_iter()
-            .for_each(|modifier| result.add(modifier));
+            .for_each(|modifier| result.insert(modifier));
         result
     }
 
@@ -181,7 +182,7 @@ impl ModifierState {
             .unwrap_or(0)
     }
 
-    pub fn add(&mut self, modifier: Modifier) {
+    pub fn insert(&mut self, modifier: Modifier) {
         match self.available_modifiers.entry(modifier) {
             Entry::Occupied(mut entry) => {
                 let amount = *entry.get();
@@ -226,6 +227,70 @@ impl ModifierState {
     pub fn retain(&mut self, predicate: impl Fn(&Modifier) -> bool) {
         self.available_modifiers
             .retain(|modifier, _| predicate(modifier));
+    }
+
+    fn decrease_counts_with(
+        &mut self,
+        other: &ModifierState,
+        decrease: impl Fn(usize, usize) -> usize,
+    ) {
+        self.available_modifiers.retain(|&modifier, count| {
+            match NonZeroUsize::new(decrease(count.get(), other.count_of(modifier))) {
+                Some(new_count) => {
+                    *count = new_count;
+                    true
+                },
+                None => false,
+            }
+        })
+    }
+
+    /// Reduces the counts of all modifiers within this state by their respective count in the given
+    /// `other` state. Consequently, modifiers with a count less than that in `other` are
+    /// removed from this state.
+    pub fn saturating_sub_assign(&mut self, other: &ModifierState) {
+        self.decrease_counts_with(other, usize::saturating_sub);
+    }
+
+    /// Owned variant of [ModifierState::saturating_sub_assign].
+    pub fn saturating_sub(mut self, other: &ModifierState) -> ModifierState {
+        self.saturating_sub_assign(other);
+        self
+    }
+
+    /// Reduces the counts of all modifiers within this state that have a greater count than in the
+    /// given `other` state to the count in `other`. Modifiers that are not present in `other` at
+    /// all are removed from this state.
+    pub fn min_assign(&mut self, other: &ModifierState) {
+        self.decrease_counts_with(other, usize::min);
+    }
+
+    /// Owned variant of [ModifierState::min_assign].
+    pub fn min(mut self, other: &ModifierState) -> ModifierState {
+        self.min_assign(other);
+        self
+    }
+}
+
+impl<'rhs> AddAssign<&'rhs ModifierState> for ModifierState {
+    fn add_assign(&mut self, rhs: &'rhs ModifierState) {
+        for (modifier, &added_count) in rhs.available_modifiers.iter() {
+            if let Some(count) = self.available_modifiers.get_mut(modifier) {
+                *count = NonZeroUsize::new(count.get() + added_count.get()).unwrap();
+            }
+            else {
+                self.available_modifiers.insert(*modifier, added_count);
+            }
+        }
+    }
+}
+
+impl<'rhs> Add<&'rhs ModifierState> for ModifierState {
+    type Output = ModifierState;
+
+    fn add(mut self, rhs: &'rhs ModifierState) -> ModifierState {
+        self += rhs;
+        self
     }
 }
 
@@ -458,5 +523,102 @@ mod tests {
             Modifier::FatePoint,
             Modifier::FatePoint,
         ]));
+    }
+
+    #[rstest]
+    #[case::both_empty([], [], [])]
+    #[case::lhs_empty([], [Modifier::FatePoint], [])]
+    #[case::rhs_empty([Modifier::FatePoint], [], [Modifier::FatePoint])]
+    #[case::equal([Modifier::FatePoint], [Modifier::FatePoint], [])]
+    #[case::rhs_is_subset(
+        [Modifier::FatePoint, Modifier::ExtraQualityLevelOnSuccess],
+        [Modifier::FatePoint],
+        [Modifier::ExtraQualityLevelOnSuccess]
+    )]
+    #[case::rhs_is_superset(
+        [Modifier::FatePoint],
+        [Modifier::FatePoint, Modifier::ExtraQualityLevelOnSuccess],
+        [],
+    )]
+    #[case::rhs_has_lower_multiplicity(
+        [Modifier::FatePoint; 3],
+        [Modifier::FatePoint],
+        [Modifier::FatePoint; 2],
+    )]
+    #[case::rhs_has_higher_multiplicity([Modifier::FatePoint], [Modifier::FatePoint; 2], [])]
+    #[case::mixed_multiplicities(
+        [Modifier::FatePoint, Modifier::FatePoint, Modifier::ExtraQualityLevelOnSuccess],
+        [
+            Modifier::FatePoint,
+            Modifier::ExtraQualityLevelOnSuccess,
+            Modifier::ExtraQualityLevelOnSuccess,
+        ],
+        [Modifier::FatePoint],
+    )]
+    fn modifier_state_saturating_sub(
+        #[case] lhs: impl IntoIterator<Item = Modifier>,
+        #[case] rhs: impl IntoIterator<Item = Modifier>,
+        #[case] expected: impl IntoIterator<Item = Modifier>,
+    ) {
+        let lhs = ModifierState::from_modifiers(lhs);
+        let rhs = ModifierState::from_modifiers(rhs);
+        let expected = ModifierState::from_modifiers(expected);
+
+        let result = lhs.saturating_sub(&rhs);
+
+        assert_that!(result).is_equal_to(expected);
+    }
+
+    #[rstest]
+    #[case::both_empty([], [], [])]
+    #[case::lhs_empty([], [Modifier::FatePoint], [])]
+    #[case::rhs_empty([Modifier::FatePoint], [], [])]
+    #[case::equal([Modifier::FatePoint; 2], [Modifier::FatePoint; 2], [Modifier::FatePoint; 2])]
+    #[case::disjunctive(
+        [Modifier::FatePoint, Modifier::FatePoint, Modifier::Aptitude(Aptitude::new(2).unwrap())],
+        [Modifier::ExtraQualityLevelOnSuccess],
+        [],
+    )]
+    #[case::rhs_is_subset(
+        [Modifier::FatePoint, Modifier::ExtraQualityLevelOnSuccess],
+        [Modifier::FatePoint],
+        [Modifier::FatePoint],
+    )]
+    #[case::rhs_is_superset(
+        [Modifier::FatePoint],
+        [Modifier::FatePoint, Modifier::ExtraQualityLevelOnSuccess],
+        [Modifier::FatePoint],
+    )]
+    #[case::rhs_has_lower_multiplicity(
+        [Modifier::FatePoint; 3],
+        [Modifier::FatePoint; 2],
+        [Modifier::FatePoint; 2],
+    )]
+    #[case::rhs_has_higher_multiplicity(
+        [Modifier::FatePoint; 1],
+        [Modifier::FatePoint; 3],
+        [Modifier::FatePoint; 1],
+    )]
+    #[case::mixed_multiplicities(
+        [Modifier::FatePoint, Modifier::FatePoint, Modifier::ExtraQualityLevelOnSuccess],
+        [
+            Modifier::FatePoint,
+            Modifier::ExtraQualityLevelOnSuccess,
+            Modifier::ExtraQualityLevelOnSuccess,
+        ],
+        [Modifier::FatePoint, Modifier::ExtraQualityLevelOnSuccess],
+    )]
+    fn modifier_state_min(
+        #[case] lhs: impl IntoIterator<Item = Modifier>,
+        #[case] rhs: impl IntoIterator<Item = Modifier>,
+        #[case] expected: impl IntoIterator<Item = Modifier>,
+    ) {
+        let lhs = ModifierState::from_modifiers(lhs);
+        let rhs = ModifierState::from_modifiers(rhs);
+        let expected = ModifierState::from_modifiers(expected);
+
+        let result = lhs.min(&rhs);
+
+        assert_that!(result).is_equal_to(expected);
     }
 }
