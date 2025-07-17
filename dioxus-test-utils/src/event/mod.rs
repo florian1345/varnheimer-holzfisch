@@ -2,7 +2,7 @@ mod focus;
 mod form;
 mod mouse;
 
-use dioxus_core::prelude::EventHandler;
+use dioxus_core::EventHandler;
 use dioxus_html::{
     AnimationData,
     ClipboardData,
