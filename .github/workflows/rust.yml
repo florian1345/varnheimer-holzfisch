@@ -58,7 +58,7 @@ jobs:
       - name: Install Dioxus-CLI
         uses: taiki-e/cache-cargo-install-action@v2
         with:
-          tool: dioxus-cli@0.7.0-alpha.2
+          tool: dioxus-cli@0.7.0-alpha.3
       - name: Build
         run: dx bundle --verbose --release --package frontend --platform web
       - name: Deploy

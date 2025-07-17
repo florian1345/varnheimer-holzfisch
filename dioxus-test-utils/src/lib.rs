@@ -10,13 +10,13 @@ use std::fmt::{Debug, Formatter, Write};
 use std::ops::{Index, IndexMut};
 use std::rc::Rc;
 
-use dioxus_core::prelude::IntoAttributeValue;
 use dioxus_core::{
     AttributeValue,
     ComponentFunction,
     Element,
     ElementId,
     Event,
+    IntoAttributeValue,
     Template,
     TemplateAttribute,
     TemplateNode,

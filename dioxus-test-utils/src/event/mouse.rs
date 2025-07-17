@@ -1,6 +1,5 @@
 use std::any::Any;
 
-use dioxus_html::HasMouseData;
 use dioxus_html::geometry::{ClientPoint, ElementPoint, PagePoint, ScreenPoint};
 use dioxus_html::input_data::{MouseButton, MouseButtonSet};
 use dioxus_html::point_interaction::{
@@ -9,7 +8,7 @@ use dioxus_html::point_interaction::{
     ModifiersInteraction,
     PointerInteraction,
 };
-use dioxus_html::prelude::Modifiers;
+use dioxus_html::{HasMouseData, Modifiers};
 
 use crate::event::EventType;
 
